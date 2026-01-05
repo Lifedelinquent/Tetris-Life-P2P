@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# OS misc
+.DS_Store
+Thumbs.db
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.log.*
+
+# Editor
+.vscode/
+.idea/
+
+# Redundant Media (Already in public/music)
+*.mp3
+!public/music/*.mp3
+!public/loop.mp3
+!public/classic.mp3

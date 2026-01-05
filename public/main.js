@@ -1,0 +1,1270 @@
+import { TetrisEngine } from './tetris.js'; // Corrected Import
+import { BattleManager } from './battle.js';
+import { ArcadeManager } from './arcade_effects.js?v=3'; // Cache Busting
+import { FirebaseHandler } from './multiplayer.js';
+// import { MockFirebaseHandler } from './multiplayer.js';
+
+let fb = new FirebaseHandler();
+const arcade = new ArcadeManager();
+arcade.init(); // Initialize the Tetris background animation
+window.arcade = arcade; // Expose globally for debugging
+
+// ... Global Vars ...
+// ...
+
+function gameLoop() {
+    if (!startTime || isPaused) {
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - startTime;
+
+    // Timer UI (Count UP)
+    const mins = Math.floor(elapsed / 60000);
+    const secs = Math.floor((elapsed % 60000) / 1000);
+    document.getElementById('timer').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+    // Level & Speed Logic - Faster progression for intense battles (based on Tetris 99 research)
+    const level = Math.floor(elapsed / 15000) + 1; // 15s Levels (faster than before)
+
+    // START DRUMS - DISABLED for MP3 Mode
+    // if (level >= 2) { arcade.setDrums(true); } else { arcade.setDrums(false); }
+    arcade.setDrums(false);
+
+    // Speed: 1200ms start, decrease 90ms per level, min 150ms (reaches max speed at ~3:30 mins)
+    let targetSpeed = Math.max(150, 1200 - ((level - 1) * 90));
+
+    // Music Tempo Sync (MP3 Speed)
+    // Safeguard: Ensure level is valid before setting tempo
+    if (!isNaN(level) && level > 0) {
+        // arcade.setTempoScale(1 + ((level - 1) * 0.05)); // Old Synth
+        arcade.setMusicSpeed(1 + ((level - 1) * 0.02)); // New MP3 (Slower/Gradual: 2% per level)
+    }
+
+    // Stats UI (Score)
+    if (myScoreId) document.getElementById(myScoreId).innerText = score;
+
+    // Power-up check (Rush Override)
+    if (p1Battle.finalRushActive) {
+        targetSpeed = 300; // FASTEST (Fixed for Rush)
+        document.getElementById('p1-rush-btn').classList.add('active'); // Visual
+    }
+
+    currentSpeed = targetSpeed;
+
+    try {
+        if (p1) p1.render();
+        if (p2 && p2.render) p2.render();
+
+        // Panic Mode Music - Check if either player is in danger
+        const p1Container = document.querySelector('.p1-split .main-board-container');
+        const p2Container = document.querySelector('.p2-split .main-board-container');
+        const p1InDanger = p1Container && p1Container.classList.contains('danger-mode');
+        const p2InDanger = p2Container && p2Container.classList.contains('danger-mode');
+        arcade.setPanicMode(p1InDanger || p2InDanger);
+    } catch (e) {
+        console.error("Game Loop Render Error:", e);
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+window.arcade = arcade; // Expose for debugging
+
+
+window.addEventListener('load', () => {
+    try {
+        console.log("Initializing Arcade Manager...");
+
+        // Auto-init audio on first user interaction (no click-to-start screen)
+        let audioInitialized = false;
+        document.addEventListener('click', () => {
+            if (!audioInitialized) {
+                console.log("First click detected. Unlocking audio...");
+                arcade.initAudio();
+                arcade.resumeAudio();
+                audioInitialized = true;
+            }
+        }, { once: false }); // Keep listening but only init once
+
+        // Music toggle button functionality
+        const musicBtn = document.getElementById('music-toggle');
+        if (musicBtn) {
+            musicBtn.addEventListener('click', () => {
+                if (arcade.musicOn) {
+                    arcade.stopMusic();
+                    musicBtn.innerText = "🎵 MUSIC: OFF";
+                } else {
+                    arcade.startMusic();
+                    musicBtn.innerText = "🎵 MUSIC: ON";
+                }
+            });
+        }
+
+        // Volume Sliders (In-Game)
+        const musicSlider = document.getElementById('music-slider');
+        if (musicSlider) {
+            musicSlider.addEventListener('input', (e) => {
+                arcade.setMusicVolume(e.target.value);
+            });
+        }
+
+        const sfxSlider = document.getElementById('sfx-slider');
+        if (sfxSlider) {
+            sfxSlider.addEventListener('input', (e) => {
+                arcade.setSfxVolume(e.target.value);
+            });
+        }
+        // Note: Music toggle is already handled above
+
+        // Music Toggle (In-Game)
+        const inGameMusicBtn = document.getElementById('ingame-music-toggle');
+        if (inGameMusicBtn) {
+            console.log("Mute button found, attaching listener...");
+            inGameMusicBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent event bubbling
+                console.log("Mute button clicked!");
+                const isPlaying = arcade.toggleMusic();
+                inGameMusicBtn.innerText = isPlaying ? "🔊" : "🔇";
+                if (isPlaying) arcade.playClickSound();
+            });
+        } else {
+            console.warn("Mute button NOT found!");
+        }
+
+    } catch (e) {
+        console.error("Arcade Init Failed:", e);
+        alert("Arcade Init Failed: " + e.message);
+    }
+});
+
+console.log("Main script loaded");
+
+let p1, p2, p1Battle;
+let matchActive = false;
+let startTime;
+const MATCH_DURATION = 120000; // 2 minutes
+
+// Game State Globals
+let score = 0;
+let currentSpeed = 1000;
+let tickTimeout;
+let myScoreId;
+let myButtonPrefix = 'p1'; // Default to p1, set dynamically in initGame
+
+const p1Canvas = document.getElementById('p1-canvas');
+const p2Canvas = document.getElementById('p2-canvas');
+let isPaused = false;
+let pauseStartTime = 0;
+
+let gameInitialized = false;
+
+async function initGame(userId) {
+    if (gameInitialized) return;
+    gameInitialized = true;
+    console.log("Initializing game for", userId);
+
+    // Start Real Firebase Handler
+    console.log("Starting Online Mode");
+    fb = new FirebaseHandler("main_match", userId);
+
+    try {
+        let stats;
+
+        // Use the mock handler's init (which is instant)
+        stats = await fb.initPlayer(userId);
+
+        console.log("Player stats loaded:", stats);
+
+        // Initialize match with a PROPER empty grid (20 rows x 12 cols)
+        const emptyGrid = Array.from({ length: 20 }, () => Array(12).fill(0));
+        fb.sendGameState(emptyGrid, 0, []).catch(e => console.error("Initial sendGameState failed:", e));
+
+        // Stats Population (Local)
+        // Note: For now, in offline mode, we only fetch our OWN stats.
+        // The opponent's stats will be 0 by default in the HTML.
+        const myWins = stats.wins;
+        // const myPB = stats.pb; 
+
+        // Dynamic Canvas Binding based on User Identity
+        let localCanvas, remoteCanvas, localNext, remoteNext, localHold, remoteHold;
+
+        if (userId === "Solo") {
+            // SINGLE PLAYER SETUP
+            document.body.classList.add('single-player');
+            localCanvas = document.getElementById('p1-canvas');
+            localNext = document.getElementById('p1-next');
+            localHold = document.getElementById('p1-hold');
+            // Remote is ignored/dummy
+            remoteCanvas = document.getElementById('p2-canvas');
+            remoteNext = document.getElementById('p2-next');
+
+            document.querySelector('.p1-split .player-name').innerText = "SOLO CHALLENGE";
+            document.getElementById('p1-lifetime-wins').innerText = "-";
+            myScoreId = 'p1-pb';
+
+            // Highlight
+            document.querySelector('.p1-border').style.borderColor = '#4a90e2'; // Blue
+            document.querySelector('.p1-border').style.boxShadow = '0 0 20px #4a90e2';
+
+        } else if (userId === "Lifedelinquent") {
+            localCanvas = document.getElementById('p1-canvas');
+            // ... (rest of P1 logic)
+            remoteCanvas = document.getElementById('p2-canvas');
+            localNext = document.getElementById('p1-next');
+            localHold = document.getElementById('p1-hold');
+            remoteNext = document.getElementById('p2-next');
+
+            // UI Labels & Stats
+            document.querySelector('.p1-split .player-name').innerText = "LIFEDELINQUENT (YOU)";
+            document.querySelector('.p2-split .player-name').innerText = "CHRONOKOALA (OPPONENT)";
+            document.getElementById('p1-lifetime-wins').innerText = myWins;
+
+            // Highlight My Board
+            document.querySelector('.p1-border').style.borderColor = '#FFD700'; // Gold
+            document.querySelector('.p1-border').style.boxShadow = '0 0 20px #FFD700';
+
+            myScoreId = 'p1-pb';
+            myButtonPrefix = 'p1';
+        } else {
+            // ... (P2 logic)
+            localCanvas = document.getElementById('p2-canvas');
+            remoteCanvas = document.getElementById('p1-canvas');
+            localNext = document.getElementById('p2-next');
+            localHold = document.getElementById('p2-hold');
+            remoteNext = document.getElementById('p1-next');
+
+            // UI Labels & Stats
+            document.querySelector('.p2-split .player-name').innerText = "CHRONOKOALA (YOU)";
+            document.querySelector('.p1-split .player-name').innerText = "LIFEDELINQUENT (OPPONENT)";
+            document.getElementById('p2-lifetime-wins').innerText = myWins;
+
+            // Highlight My Board
+            document.querySelector('.p2-border').style.borderColor = '#FFD700'; // Gold
+            document.querySelector('.p2-border').style.boxShadow = '0 0 20px #FFD700';
+
+            myScoreId = 'p2-pb';
+            myButtonPrefix = 'p2';
+        }
+
+        // p1 variable acts as the LOCAL ENGINE (Your Inputs)
+        p1 = new TetrisEngine(localCanvas, localNext, localHold);
+        p1Battle = new BattleManager(p1, userId === 'Lifedelinquent' || userId === 'Solo');
+        p1Battle.onShieldUsed = () => updatePowerUpUI(); // Update UI when shield is consumed
+
+        // p2 variable acts as the REMOTE ENGINE (Network Updates)
+        p2 = new TetrisEngine(remoteCanvas, remoteNext);
+
+        // --- Presence & Match Start Logic ---
+        if (userId === "Solo") {
+            console.log("Solo Mode: Starting immediately...");
+            // Immediate Start
+            startCountdown(Date.now() + 3000);
+            return; // EXIT initGame, skip network listeners
+        }
+
+        // 1. Announce I am online
+        fb.setOnline();
+
+        // 2. Listen for the Start Signal (Handles BOTH players)
+        fb.listenToMatchStart((timestamp) => {
+            console.log("Match Start Signal Received via Network:", new Date(timestamp));
+            startCountdown(timestamp);
+        });
+
+        // 2b. Listen for Pause State Sync (Both players pause/unpause together)
+        fb.listenToPause((pauseState) => {
+            // Only log actual pause changes, not every Firebase update
+            applyLocalPause(pauseState.paused, pauseState.canUnpause);
+        });
+
+        // 3. Check for Opponent Presence to trigger start
+        // Host (Lifedelinquent) detects Guest.
+        const opponentId = userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
+
+        // Listen continuously. The handler in multiplayer.js handles deduping by timestamp.
+        fb.listenToOnline(opponentId, async (isOnline) => {
+            if (isOnline) {
+                console.log("Opponent Detected (New Session/Refresh)!");
+
+                // Host Authority: Only Lifedelinquent triggers the start
+                if (userId === "Lifedelinquent") {
+                    console.log("I am Host. Triggering/Restaring Match...");
+                    try {
+                        await fb.triggerMatchStart();
+                    } catch (e) { console.error("Trigger Start Failed", e); }
+                } else {
+                    console.log("I am Guest. Waiting for Host...");
+                }
+            }
+        });
+
+
+        fb.listenToMatch((data) => {
+            if (data[`${opponentId}_grid`]) {
+                const gridData = data[`${opponentId}_grid`];
+                const parsedGrid = typeof gridData === 'string' ? JSON.parse(gridData) : gridData;
+
+                // Validate Grid Structure (Must be array of arrays)
+                if (Array.isArray(parsedGrid) && parsedGrid.length > 0 && Array.isArray(parsedGrid[0])) {
+                    p2.grid = parsedGrid;
+                }
+                // Empty grid is normal during game start/end - no warning needed
+            }
+            // Check for Ghost Piece
+            if (data[`${opponentId}_ko`] !== undefined) {
+                const targetId = userId === "Lifedelinquent" ? 'p2-ko' : 'p1-ko';
+                document.getElementById(targetId).innerText = data[`${opponentId}_ko`];
+            }
+
+            // NEW: Parse the opponent's full state object
+            if (data[opponentId]) {
+                try {
+                    const oppState = typeof data[opponentId] === 'string' ? JSON.parse(data[opponentId]) : data[opponentId];
+
+                    // Grid
+                    if (oppState.grid) {
+                        const parsedGrid = typeof oppState.grid === 'string' ? JSON.parse(oppState.grid) : oppState.grid;
+                        if (Array.isArray(parsedGrid) && parsedGrid.length > 0 && Array.isArray(parsedGrid[0])) {
+                            // Detect line clears by comparing filled rows
+                            const oldFilledRows = p2.grid ? p2.grid.filter(row => row.some(cell => cell !== 0)).length : 0;
+                            const newFilledRows = parsedGrid.filter(row => row.some(cell => cell !== 0)).length;
+                            const linesCleared = oldFilledRows - newFilledRows;
+
+                            // Trigger effects if lines were cleared (opponent scored)
+                            if (linesCleared > 0 && window.arcade) {
+                                const isP1Side = userId !== 'Lifedelinquent'; // Opponent is on P1 side if I'm Chrono
+                                const centerX = isP1Side ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+                                const centerY = window.innerHeight * 0.5;
+                                window.arcade.createExplosion(centerX, centerY, '#FF0D72', linesCleared * 10);
+
+                                // Floating text for big clears
+                                if (linesCleared >= 4) {
+                                    window.arcade.createFloatingText('TETRIS!', centerX, centerY - 50, '#FFD700');
+                                } else if (linesCleared >= 2) {
+                                    window.arcade.createFloatingText(`+${linesCleared}`, centerX, centerY - 50, '#0DC2FF');
+                                }
+                            }
+
+                            p2.grid = parsedGrid;
+                        }
+                    }
+
+                    // Active Piece
+                    if (oppState.activePiece) {
+                        const p = oppState.activePiece;
+                        // Only trigger win if explicitly game_over === true (not just truthy/undefined)
+                        if (p.game_over === true) {
+                            console.log("Opponent sent game_over signal!");
+                            if (matchActive) {
+                                handleGameOver(false);
+                                showResultScreen("WIN");
+                            }
+                        } else if (p.type) {
+                            p2.currentPiece = p.type;
+                            p2.pos = p.pos || { x: 0, y: 0 };
+                            p2.rotation = p.rotation || 0;
+                            if (p.score !== undefined) {
+                                const targetId = userId === "Lifedelinquent" ? 'p2-pb' : 'p1-pb';
+                                document.getElementById(targetId).innerText = p.score;
+                                p2.score = p.score;
+                                updateAvatar();
+                            }
+                        }
+                    }
+
+                    // KO Count
+                    if (oppState.ko !== undefined) {
+                        const targetId = userId === "Lifedelinquent" ? 'p2-ko' : 'p1-ko';
+                        document.getElementById(targetId).innerText = oppState.ko;
+                    }
+                } catch (e) {
+                    console.warn("Error parsing opponent state:", e);
+                }
+            }
+        });
+
+        // Remove duplicate listener (was previously duplicated below)
+        // fb.listenToMatch((data) => { ... }); // REMOVED
+
+        fb.listenToAttacks((lines, effect) => {
+            p1Battle.receiveGarbage(lines, effect);
+        });
+
+        // Listen for bomb attacks
+        fb.listenToBombs(() => {
+            p1Battle.receiveBomb();
+        });
+
+        // Setup bomb detonation handler
+        p1Battle.setupBombDetonation();
+
+    } catch (error) {
+        console.error("Error initializing game:", error);
+        alert("Failed to initialize game. Check console for details.");
+    }
+}
+
+function startCountdown(targetStartTime) {
+    // Force Interrupt: Stop any running game loop logic
+    matchActive = false;
+    startTime = null;
+
+    // Reset Game State
+    p1 = new TetrisEngine(p1.canvas, p1.nextCanvas, p1.holdCanvas);
+    p1Battle = new BattleManager(p1, myButtonPrefix === 'p1');
+    p1Battle.onShieldUsed = () => updatePowerUpUI(); // Update UI when shield is consumed
+    p1Battle.setupBombDetonation(); // Re-register bomb detonation callback
+    score = 0; // RESET SCORE!
+    document.getElementById('p1-pb').innerText = "0"; // Reset UI immediately
+
+    // Broadcast Empty State to Opponent immediately
+    // This ensures they see us as empty even if they joined late or have old data
+    fb.sendGameState(p1.grid, 0, [], null).catch(e => console.error("Failed to broadcast reset:", e));
+
+    // Reset Opponent Visuals (Dynamic)
+    if (p2 && p2.canvas) {
+        const p2Ctx = p2.canvas.getContext('2d');
+        p2Ctx.clearRect(0, 0, p2Ctx.canvas.width, p2Ctx.canvas.height);
+    }
+
+    // Optional: Draw 'Waiting' or Empty Grid? Empty is fine.
+    // Also clear secondary canvases if possible, but main board is key.
+
+    // Hide Game Over Screen explicitly (Fixes stuck overlay on rematch)
+    document.getElementById('game-over-screen').classList.add('hidden');
+
+    const overlay = document.getElementById('countdown-overlay');
+    const text = document.getElementById('countdown-text');
+    overlay.classList.remove('hidden');
+
+    const interval = setInterval(() => {
+        const now = Date.now();
+        const diff = Math.ceil((targetStartTime - now) / 1000);
+
+        if (diff > 0) {
+            text.innerText = diff;
+            arcade.playSoftBeep(); // Beep on count
+        } else {
+            clearInterval(interval);
+            text.innerText = "GO!";
+            arcade.playClickSound(); // Go sound
+            setTimeout(() => overlay.classList.add('hidden'), 500);
+
+            // Audio Switch - Start battle music (MP3 playlist at 40%)
+            arcade.stopGameOverMusic(); // Stop any game over music still playing
+            arcade.stopMusic(); // Stop lobby synth music
+            arcade.startBattleMusic(); // Start MP3 playlist
+
+            // START GAME
+            matchActive = true;
+            startTime = Date.now();
+            requestAnimationFrame(gameLoop);
+            tick();
+        }
+    }, 100);
+}
+
+// Helper: Handle Piece Lock (Scoring & Attacks)
+function handleLock(result) {
+    if (!result.locked) return;
+
+    // Scoring: Landing = 25
+    score += 25;
+
+    // Scoring: Standard Tetris (100, 300, 500, 800)
+    if (result.linesCleared === 1) score += 100;
+    else if (result.linesCleared === 2) score += 300;
+    else if (result.linesCleared === 3) score += 500;
+    else if (result.linesCleared === 4) score += 800;
+
+    if (result.linesCleared > 0) {
+        arcade.playLineClear(result.linesCleared);
+        // Track lines for powerup unlock
+        if (p1Battle.onLineClear(result.linesCleared)) {
+            updatePowerUpUI();
+        }
+    } else {
+        arcade.playLand();
+    }
+
+    const isTSpin = p1.isTSpin(); // Note: Check T-Spin BEFORE drop? 
+    // Actually drop() inside tetris.js already spawned new piece, so isTSpin might be wrong?
+    // Wait, p1.isTSpin() checks current pos. 
+    // If drop() spawns new piece, p1.pos resets. 
+    // FIXED: TetrisEngine needs to return TSpin status or we check before?
+    // In tick(), isTSpin was calculated BEFORE p1.drop().
+    // We need to pass isTSpin into handleLock or move it.
+    // Let's rely on the caller to pass isTSpin if needed, or simplfy.
+    // For now, let's just make handleLock take (result, isTSpin).
+
+    if (myScoreId) document.getElementById(myScoreId).innerText = score;
+    updateAvatar();
+
+    // Counter System: Lines cleared reduce pending garbage first
+    // Then remaining lines become attack
+    let attackLines = p1Battle.calculateAttack(result.linesCleared, arguments[1] || false);
+
+    // Counter pending garbage with lines cleared
+    if (result.linesCleared > 0) {
+        const remainingForAttack = p1Battle.counterGarbage(result.linesCleared);
+        // Scale attack based on how many lines actually used for attack (not countered)
+        if (remainingForAttack < result.linesCleared) {
+            // Some lines were used for countering, reduce attack proportionally
+            const counterRatio = remainingForAttack / result.linesCleared;
+            attackLines = Math.floor(attackLines * counterRatio);
+        }
+    }
+
+    // Send attack to opponent
+    if (attackLines > 0 && fb.userId !== "Solo") {
+        const opponentId = fb.userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
+        fb.sendAttack(opponentId, attackLines);
+
+        // Track lines sent and update UI
+        p1Battle.linesSent += attackLines;
+        const mySentId = fb.userId === "Lifedelinquent" ? 'p1-lines-sent' : 'p2-lines-sent';
+        const sentEl = document.getElementById(mySentId);
+        if (sentEl) sentEl.innerText = p1Battle.linesSent;
+    }
+    // DoT system handles garbage application automatically via timer
+
+    // Update State (New Piece)
+    if (fb.userId !== "Solo") {
+        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, {
+            type: p1.currentPiece,
+            pos: p1.pos,
+            rotation: p1.rotation,
+            score: score
+        });
+    }
+
+    // Game Over Check
+    if (p1.gameOver) {
+        handleGameOver(true);
+    }
+}
+
+// Main Game Loop (Gravity)
+let lastTickTime = 0;
+
+function tick() {
+    if (!matchActive || isPaused) return;
+
+    const now = Date.now();
+    if (lastTickTime === 0) lastTickTime = now;
+
+    let delta = now - lastTickTime;
+
+    // Safety cap: If delta is huge (e.g. computer sleep), don't spiral. Max 10 ticks.
+    if (delta > currentSpeed * 10) {
+        delta = currentSpeed;
+        lastTickTime = now - delta;
+    }
+
+    // Accumulator: While enough time has passed for at least one drop...
+    while (delta >= currentSpeed) {
+
+        // --- Single Tick Logic ---
+        const isTSpin = p1.isTSpin();
+        const result = p1.drop();
+
+        // Broadcast Movement (if falling)
+        // Optimization check: broadcast every tick? Or only if state changed significantly?
+        // Let's keep broadcasting for smooth view, but maybe limit rate?
+        // Actually, broadcast is lightweight.
+        if (!result.locked && fb.userId !== "Solo") {
+            fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.garbageQueue, {
+                type: p1.currentPiece,
+                pos: p1.pos,
+                rotation: p1.rotation,
+                score: score
+            });
+        }
+
+        handleLock(result, isTSpin);
+
+        if (p1.gameOver) {
+            handleGameOver(true);
+            return;
+        }
+        // -------------------------
+
+        delta -= currentSpeed;
+        lastTickTime += currentSpeed;
+
+        // If we locked, maybe break catch-up to allow visual delay? 
+        // Standard tetris usually continues or has "Are" delay.
+        // For simple web tetris, continuing is fine, makes it fast in late game.
+    }
+
+    // Schedule next check
+    // We can check often (e.g. 50ms) to hit the targetSpeed accurately.
+    // Background throttling will force this to ~1000ms, which the while loop handles.
+    clearTimeout(tickTimeout);
+    tickTimeout = setTimeout(() => {
+        tick();
+    }, 50); // High polling rate for precision in foreground, auto-throttles in background
+}
+
+function handleGameOver(toppedOut) {
+    matchActive = false;
+    clearTimeout(tickTimeout);
+
+    // Stop Game Music - game over music will handle transition to lobby music
+    arcade.stopBattleMusic();
+
+    // Logic: If I topped out, I lose.
+    // If time ran out, compare scores? Or just Draw?
+    // User Request: "when one player... gets to top he loses so KO goto other player"
+
+    let result = "DRAW";
+    if (toppedOut) {
+        result = "LOSE";
+        // Notify Opponent I lost? 
+        // Opponent needs to know to show "WIN".
+        // simple way: set KO to Opponent locally?
+        // Better: Send a "I DIED" signal?
+        // We already send "ko" count.
+        // Wait, "KO goto other player" means Opponent gets a point. 
+
+        // Let's send a special 'game_over' state or just rely on manual "I Lost" logic overlay.
+        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.garbageQueue, { game_over: true });
+    }
+
+    showResultScreen(result);
+}
+
+// --- Sync Opponent Stats ---
+// --- Sync Opponent Stats ---
+// Logic moved to initGame() to ensure fb is defined
+
+
+// --- Rematch Logic ---
+document.getElementById('restart-btn').onclick = () => {
+    arcade.playClickSound();
+
+    if (fb.userId === "Solo") {
+        document.getElementById('game-over-screen').classList.add('hidden');
+        startCountdown(Date.now() + 3000); // Immediate Restart
+        return;
+    }
+
+    document.getElementById('restart-btn').innerText = "Waiting for Opponent...";
+    document.getElementById('restart-btn').disabled = true;
+    fb.setRematch(true);
+
+    // Start listening for BOTH to be ready
+    // Start listening for BOTH to be ready
+    const opponentId = fb.userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
+    let hasTriggeredRematch = false; // LOCK
+
+    const cleanup = fb.listenToRematch(opponentId, async (bothReady) => {
+        if (bothReady && !hasTriggeredRematch) {
+            console.log("Both Ready for Rematch!");
+            hasTriggeredRematch = true; // Lock immediately
+
+            // Reset Rematch Flags
+            localStorage.removeItem(`rematch_${fb.userId}`);
+            localStorage.removeItem(`rematch_${opponentId}`);
+
+            // Hide Overlay
+            document.getElementById('game-over-screen').classList.add('hidden');
+            document.getElementById('restart-btn').innerText = "Play Again";
+            document.getElementById('restart-btn').disabled = false;
+
+            // Trigger New Match (Host Only Authority again?)
+            // Actually, triggerMatchStart already has race-handling in backend (maybe), but let's be safe.
+            // Let's use Host Authority again.
+
+            if (fb.userId === "Lifedelinquent") {
+                const selfStart = await fb.triggerMatchStart();
+                // Note: we don't startCountdown here, we let the global listener handle it!
+                // Removing direct startCountdown calls prevents the local/remote double-start.
+            }
+
+            // Cleanup listener
+            cleanup();
+        }
+    });
+};
+
+document.getElementById('quit-btn').onclick = () => {
+    arcade.playClickSound();
+    location.reload();
+};
+
+function showResultScreen(result) {
+    document.getElementById('winner-text').innerText = result;
+    document.getElementById('game-over-screen').classList.remove('hidden');
+
+    // Play game over music (plays once, then starts lobby music)
+    arcade.playGameOverMusic();
+}
+
+function updatePowerUpUI() {
+    if (!p1Battle) return;
+
+    const status = p1Battle.getPowerUpStatus();
+
+    // Shield button
+    const shieldBtn = document.getElementById(`${myButtonPrefix}-shield-btn`);
+    if (shieldBtn) {
+        if (status.shield) {
+            shieldBtn.classList.add('ready');
+            shieldBtn.disabled = false;
+            shieldBtn.style.boxShadow = '0 0 15px #0DFF72, 0 0 30px #0DFF72';
+            shieldBtn.style.animation = 'pulse 1s infinite';
+        } else {
+            shieldBtn.classList.remove('ready');
+            shieldBtn.disabled = true;
+            shieldBtn.style.boxShadow = 'none';
+            shieldBtn.style.animation = 'none';
+        }
+        // If shield is active, show it visually
+        if (p1Battle.shieldActive) shieldBtn.classList.add('active');
+    }
+
+    // Lightning button
+    const rushBtn = document.getElementById(`${myButtonPrefix}-rush-btn`);
+    if (rushBtn) {
+        if (status.lightning) {
+            rushBtn.classList.add('ready');
+            rushBtn.disabled = false;
+            rushBtn.style.boxShadow = '0 0 15px #FFFF00, 0 0 30px #FFFF00';
+            rushBtn.style.animation = 'pulse 1s infinite';
+        } else {
+            rushBtn.classList.remove('ready');
+            rushBtn.disabled = true;
+            rushBtn.style.boxShadow = 'none';
+            rushBtn.style.animation = 'none';
+        }
+    }
+
+    // Bomb button
+    const twinBtn = document.getElementById(`${myButtonPrefix}-twin-btn`);
+    if (twinBtn) {
+        if (status.bomb) {
+            twinBtn.classList.add('ready');
+            twinBtn.disabled = false;
+            twinBtn.style.boxShadow = '0 0 15px #FF00FF, 0 0 30px #FF00FF';
+            twinBtn.style.animation = 'pulse 1s infinite';
+        } else {
+            twinBtn.classList.remove('ready');
+            twinBtn.disabled = true;
+            twinBtn.style.boxShadow = 'none';
+            twinBtn.style.animation = 'none';
+        }
+    }
+
+    // Color Buster button
+    const busterBtn = document.getElementById(`${myButtonPrefix}-buster-btn`);
+    if (busterBtn) {
+        if (status.colorBuster) {
+            busterBtn.classList.add('ready');
+            busterBtn.disabled = false;
+            busterBtn.style.boxShadow = '0 0 15px #FFFFFF, 0 0 30px #00FFFF, 0 0 45px #FF00FF';
+            busterBtn.style.animation = 'pulse 1s infinite';
+        } else {
+            busterBtn.classList.remove('ready');
+            busterBtn.disabled = true;
+            busterBtn.style.boxShadow = 'none';
+            busterBtn.style.animation = 'none';
+        }
+    }
+}
+
+// Controls
+window.addEventListener('keydown', (e) => {
+    if (!matchActive) return;
+
+    // Powerups Shortcuts
+    const k = e.key.toLowerCase();
+    if (k === 's') {
+        const btn = document.getElementById(`${myButtonPrefix}-shield-btn`);
+        if (btn) btn.click();
+    }
+    if (k === 'r') {
+        const btn = document.getElementById(`${myButtonPrefix}-rush-btn`);
+        if (btn) btn.click();
+    }
+    if (k === 'e') {
+        const btn = document.getElementById(`${myButtonPrefix}-twin-btn`);
+        if (btn) btn.click();
+    }
+    if (k === 'q') {
+        const btn = document.getElementById(`${myButtonPrefix}-buster-btn`);
+        if (btn) btn.click();
+    }
+
+    // Movement Logic
+    // Movement Logic
+    let changed = false;
+    let lockResult = null;
+    let tSpinCheck = false;
+
+    if (e.key === 'ArrowLeft') { p1.pos.x--; changed = true; }
+    if (e.key === 'ArrowRight') { p1.pos.x++; changed = true; }
+
+    if (e.key === 'ArrowDown') {
+        tSpinCheck = p1.isTSpin();
+        lockResult = p1.drop(); // Check lock
+        changed = true;
+    }
+
+    if (e.key === 'ArrowUp') {
+        p1.rotate(1);
+        changed = true;
+        arcade.playRotate();
+    }
+
+    if (e.key === ' ') {
+        tSpinCheck = p1.isTSpin();
+        lockResult = p1.hardDrop(); // Check lock
+        changed = true;
+    }
+
+    if (e.key === 'c' || e.key === 'C') { p1.hold(); changed = true; }
+
+    if (p1.collide() && e.key !== 'ArrowDown' && e.key !== ' ' && e.key !== 'ArrowUp') {
+        // ... (Revert code same as before)
+        if (e.key === 'ArrowLeft') p1.pos.x++;
+        if (e.key === 'ArrowRight') p1.pos.x--;
+    }
+
+    // Handle Manual Lock
+    if (lockResult && lockResult.locked) {
+        handleLock(lockResult, tSpinCheck);
+        // Don't need to broadcast here, handleLock does it
+        changed = false; // Prevent double broadcast below if we locked
+    }
+
+    // Broadcast State immediately on input for smooth ghosting (if NOT locked)
+
+    // Broadcast State immediately on input for smooth ghosting
+    if (changed && fb.userId !== "Solo") {
+        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.garbageQueue, {
+            type: p1.currentPiece,
+            pos: p1.pos,
+            rotation: p1.rotation,
+            score: score // Include score!
+        });
+    }
+});
+
+// Power-up Tooltip Logic
+const tooltip = document.getElementById('powerup-tooltip');
+document.querySelectorAll('.power-icon').forEach(btn => {
+    btn.addEventListener('mouseenter', (e) => {
+        let text = "";
+        const id = e.target.id;
+
+        if (id.includes('shield')) text = "SHIELD [S]: Blocks the next incoming garbage attack";
+        if (id.includes('rush')) text = "LIGHTNING [R]: Gives you 3 long I-pieces in a row";
+        if (id.includes('twin')) text = "BOMB [E]: Sends timer bomb to opponent (10s)";
+        if (id.includes('buster')) text = "COLOR BUSTER [Q]: Removes all blocks of one color!";
+
+        if (text) {
+            tooltip.innerText = text;
+            tooltip.classList.remove('hidden');
+            arcade.playHoverSound();
+        }
+    });
+
+    btn.addEventListener('mouseleave', () => {
+        tooltip.classList.add('hidden');
+    });
+});
+
+// Powerup Button Handlers - Set up for both P1 and P2
+function setupPowerUpButton(prefix) {
+    const shieldBtn = document.getElementById(`${prefix}-shield-btn`);
+    const rushBtn = document.getElementById(`${prefix}-rush-btn`);
+    const twinBtn = document.getElementById(`${prefix}-twin-btn`);
+    const busterBtn = document.getElementById(`${prefix}-buster-btn`);
+
+    if (shieldBtn) {
+        shieldBtn.onclick = () => {
+            if (!p1Battle) return;
+            const result = p1Battle.usePowerUp('shield');
+            if (result) {
+                shieldBtn.classList.add('active');
+                updatePowerUpUI();
+                arcade.playClickSound();
+            }
+        };
+    }
+
+    if (rushBtn) {
+        rushBtn.onclick = () => {
+            if (!p1Battle) return;
+            const result = p1Battle.usePowerUp('rush');
+            if (result) {
+                updatePowerUpUI();
+                arcade.playClickSound();
+            }
+        };
+    }
+
+    if (twinBtn) {
+        twinBtn.onclick = () => {
+            if (!p1Battle) return;
+            const result = p1Battle.usePowerUp('twin');
+            if (result === 'sendBomb') {
+                // Send timer mine bomb to opponent's queue via multiplayer
+                const opponentId = fb.userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
+                fb.sendBomb(opponentId);
+                updatePowerUpUI();
+                arcade.playClickSound();
+
+                // Visual feedback for sender
+                const x = fb.userId === "Lifedelinquent" ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+                arcade.createFloatingText("💣 BOMB SENT!", x, window.innerHeight * 0.4, '#ff00ff');
+            }
+        };
+    }
+
+    if (busterBtn) {
+        busterBtn.onclick = () => {
+            if (!p1Battle) return;
+            const result = p1Battle.usePowerUp('colorBuster');
+            if (result) {
+                updatePowerUpUI();
+                arcade.playClickSound();
+            }
+        };
+    }
+}
+
+// Set up handlers for both players' buttons
+setupPowerUpButton('p1');
+setupPowerUpButton('p2');
+
+// --- LOBBY SYSTEM ---
+let selectedUserId = null;
+let lobbyFb = null;
+
+// Initialize lobby Firebase listener (before player selection)
+(async function initLobby() {
+    // Create a temporary Firebase handler just for lobby
+    lobbyFb = new FirebaseHandler("main_match", "lobby_watcher");
+
+    // Listen for ready status changes
+    lobbyFb.listenToReadyStatus(({ lifeReady, chronoReady }) => {
+        // Update ready indicators
+        const lifeStatus = document.getElementById('life-ready-status');
+        const chronoStatus = document.getElementById('chrono-ready-status');
+        const startBtn = document.getElementById('start-battle-btn');
+
+        if (lifeStatus) {
+            lifeStatus.classList.toggle('hidden', !lifeReady);
+        }
+        if (chronoStatus) {
+            chronoStatus.classList.toggle('hidden', !chronoReady);
+        }
+
+        // Sync avatar visibility for BOTH players (so each sees opponent's selection)
+        const lobbyLifeAvatar = document.getElementById('lobby-life-avatar');
+        const btnLifeAvatar = document.getElementById('btn-life-avatar');
+        const lobbyChronoAvatar = document.getElementById('lobby-chrono-avatar');
+        const btnChronoAvatar = document.getElementById('btn-chrono-avatar');
+
+        // Lifedelinquent avatar: hide title avatar when ready, show button avatar
+        if (lobbyLifeAvatar) lobbyLifeAvatar.classList.toggle('hidden', lifeReady);
+        if (btnLifeAvatar) btnLifeAvatar.classList.toggle('hidden', !lifeReady);
+
+        // ChronoKoala avatar: hide title avatar when ready, show button avatar
+        if (lobbyChronoAvatar) lobbyChronoAvatar.classList.toggle('hidden', chronoReady);
+        if (btnChronoAvatar) btnChronoAvatar.classList.toggle('hidden', !chronoReady);
+
+        // Enable START button if at least one player is ready
+        if (startBtn) {
+            startBtn.disabled = !(lifeReady || chronoReady);
+        }
+    });
+
+    // Listen for match start signal
+    lobbyFb.listenToMatchStart((timestamp) => {
+        console.log("Match Start Signal Received in Lobby:", new Date(timestamp));
+        if (selectedUserId && selectedUserId !== 'Solo') {
+            // Hide login, show game, init game
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('game-container').classList.remove('hidden');
+            initGame(selectedUserId);
+        }
+    });
+})();
+
+document.getElementById('select-lifedelinquent').onclick = async (e) => {
+    arcade.playClickSound();
+
+    // Toggle ready/unready
+    if (selectedUserId === 'Lifedelinquent') {
+        // Already selected, unready
+        console.log("Unreadying Lifedelinquent");
+        selectedUserId = null;
+        e.target.classList.remove('selected');
+
+        // Show title avatar again, hide button avatar
+        const lobbyLifeAvatar = document.getElementById('lobby-life-avatar');
+        const btnLifeAvatar = document.getElementById('btn-life-avatar');
+        if (lobbyLifeAvatar) lobbyLifeAvatar.classList.remove('hidden');
+        if (btnLifeAvatar) btnLifeAvatar.classList.add('hidden');
+
+        // Clear ready status in Firebase
+        const tempFb = new FirebaseHandler("main_match", "Lifedelinquent");
+        await tempFb.clearReadyForPlayer('Lifedelinquent');
+    } else {
+        // Select and ready
+        console.log("Selected Lifedelinquent");
+        selectedUserId = 'Lifedelinquent';
+        e.target.classList.add('selected');
+        document.getElementById('select-chronokoala').classList.remove('selected');
+
+        // Hide title avatar, show button avatar
+        const lobbyLifeAvatar = document.getElementById('lobby-life-avatar');
+        const btnLifeAvatar = document.getElementById('btn-life-avatar');
+        const lobbyChronoAvatar = document.getElementById('lobby-chrono-avatar');
+        const btnChronoAvatar = document.getElementById('btn-chrono-avatar');
+
+        if (lobbyLifeAvatar) lobbyLifeAvatar.classList.add('hidden');
+        if (btnLifeAvatar) btnLifeAvatar.classList.remove('hidden');
+        // Reset Chrono avatars (show title, hide button)
+        if (lobbyChronoAvatar) lobbyChronoAvatar.classList.remove('hidden');
+        if (btnChronoAvatar) btnChronoAvatar.classList.add('hidden');
+
+        // Set ready status in Firebase
+        const tempFb = new FirebaseHandler("main_match", "Lifedelinquent");
+        await tempFb.setReady('Lifedelinquent');
+    }
+};
+
+document.getElementById('select-chronokoala').onclick = async (e) => {
+    arcade.playClickSound();
+
+    // Toggle ready/unready
+    if (selectedUserId === 'ChronoKoala') {
+        // Already selected, unready
+        console.log("Unreadying ChronoKoala");
+        selectedUserId = null;
+        e.target.classList.remove('selected');
+
+        // Show title avatar again, hide button avatar
+        const lobbyChronoAvatar = document.getElementById('lobby-chrono-avatar');
+        const btnChronoAvatar = document.getElementById('btn-chrono-avatar');
+        if (lobbyChronoAvatar) lobbyChronoAvatar.classList.remove('hidden');
+        if (btnChronoAvatar) btnChronoAvatar.classList.add('hidden');
+
+        // Clear ready status in Firebase
+        const tempFb = new FirebaseHandler("main_match", "ChronoKoala");
+        await tempFb.clearReadyForPlayer('ChronoKoala');
+    } else {
+        // Select and ready
+        console.log("Selected ChronoKoala");
+        selectedUserId = 'ChronoKoala';
+        document.getElementById('select-chronokoala').classList.add('selected');
+        document.getElementById('select-lifedelinquent').classList.remove('selected');
+
+        // Hide title avatar, show button avatar
+        const lobbyChronoAvatar = document.getElementById('lobby-chrono-avatar');
+        const btnChronoAvatar = document.getElementById('btn-chrono-avatar');
+        const lobbyLifeAvatar = document.getElementById('lobby-life-avatar');
+        const btnLifeAvatar = document.getElementById('btn-life-avatar');
+
+        if (lobbyChronoAvatar) lobbyChronoAvatar.classList.add('hidden');
+        if (btnChronoAvatar) btnChronoAvatar.classList.remove('hidden');
+        // Reset Life avatars (show title, hide button)
+        if (lobbyLifeAvatar) lobbyLifeAvatar.classList.remove('hidden');
+        if (btnLifeAvatar) btnLifeAvatar.classList.add('hidden');
+
+        // Set ready status in Firebase
+        const tempFb = new FirebaseHandler("main_match", "ChronoKoala");
+        await tempFb.setReady('ChronoKoala');
+    }
+};
+
+document.getElementById('start-battle-btn').onclick = async () => {
+    arcade.playClickSound();
+    console.log("START BATTLE clicked!");
+
+    if (!selectedUserId) {
+        alert("Please select a player first!");
+        return;
+    }
+
+    // Trigger match start for everyone listening
+    const tempFb = new FirebaseHandler("main_match", selectedUserId);
+    await tempFb.clearReady(); // Clear ready status
+    await tempFb.triggerMatchStart();
+
+    // Local player also starts
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+    initGame(selectedUserId);
+};
+
+document.getElementById('select-solo').onclick = () => {
+    arcade.playClickSound();
+    console.log("Selected Solo Mode");
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+    initGame('Solo');
+};
+
+// Arcade Button Hover Sounds
+['select-lifedelinquent', 'select-chronokoala', 'select-solo'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) {
+        btn.addEventListener('mouseenter', () => arcade.playHoverSound());
+    }
+});
+
+function updateAvatar() {
+    if (!p2 || typeof p2.score === 'undefined') return;
+
+    // Calculate score difference from each player's perspective
+    // Positive diff = that player is winning
+    // Negative diff = that player is losing
+
+    const p1Avatar = document.getElementById('p1-avatar');
+    const p2Avatar = document.getElementById('p2-avatar');
+
+    // Lifedelinquent's score diff (My Score - Opponent's Score)
+    let lifeDiff = 0;
+    // ChronoKoala's score diff
+    let chronoDiff = 0;
+
+    if (fb.userId === "Lifedelinquent") {
+        lifeDiff = score - p2.score;       // Life (Me) - Chrono (P2)
+        chronoDiff = p2.score - score;     // Chrono (P2) - Life (Me)
+    } else if (fb.userId === "ChronoKoala") {
+        lifeDiff = p2.score - score;       // Life (P2) - Chrono (Me)
+        chronoDiff = score - p2.score;     // Chrono (Me) - Life (P2)
+    } else {
+        // Solo mode - just show normal
+        return;
+    }
+
+    // Helper function to determine face based on score diff
+    function getFace(diff) {
+        if (diff >= 1000) return "excited";      // Winning Big
+        else if (diff >= 200) return "happy";    // Winning
+        else if (diff <= -1000) return "mad";    // Losing Big (Brian uses "angry")
+        else if (diff <= -200) return "sad";     // Losing
+        return "normal";
+    }
+
+    // Update Brian (Lifedelinquent) avatar
+    if (p1Avatar) {
+        let brianFace = getFace(lifeDiff);
+        // Brian uses "angry" instead of "mad"
+        if (brianFace === "mad") brianFace = "angry";
+        const brianPath = `avatars/brian${brianFace}.png`;
+        if (!p1Avatar.src.includes(brianPath)) {
+            p1Avatar.src = brianPath;
+        }
+    }
+
+    // Update Fernando (ChronoKoala) avatar
+    if (p2Avatar) {
+        let fernandoFace = getFace(chronoDiff);
+        const fernandoPath = `avatars/fernando${fernandoFace}.png`;
+        if (!p2Avatar.src.includes(fernandoPath)) {
+            p2Avatar.src = fernandoPath;
+        }
+    }
+}
+
+function togglePause() {
+    if (!matchActive && !isPaused) return;
+
+    // Check if we can unpause (only initiator can unpause within 5 min)
+    if (isPaused && !canUnpause) {
+        console.log("Cannot unpause - only the player who paused can unpause (or wait 5 min)");
+        return;
+    }
+
+    const wantToPause = !isPaused;
+
+    // Send to Firebase - the listener will handle the actual state change
+    if (fb && fb.setPause) {
+        fb.setPause(wantToPause);
+    } else {
+        // Fallback for solo/offline mode
+        applyLocalPause(wantToPause, true);
+    }
+}
+
+// Called by Firebase listener or directly for solo mode
+function applyLocalPause(shouldPause, canUnpauseLocal = true) {
+    if (shouldPause === isPaused) return; // No change
+
+    isPaused = shouldPause;
+    canUnpause = canUnpauseLocal;
+    const overlay = document.getElementById('pause-overlay');
+
+    if (isPaused) {
+        // PAUSE
+        console.log("Game Paused");
+        overlay.classList.remove('hidden');
+
+        // Update overlay text to show who can unpause
+        const pauseText = overlay.querySelector('h2') || overlay;
+        if (!canUnpause) {
+            pauseText.textContent = "PAUSED - Waiting for opponent...";
+        } else {
+            pauseText.textContent = "PAUSED";
+        }
+
+        // Stop audio context (synthesized) and MP3 music
+        if (arcade.audioCtx) {
+            arcade.audioCtx.suspend();
+        }
+        // Pause MP3 music (preserves position for resume)
+        if (arcade.audioElement) {
+            arcade.audioElement.pause();
+        }
+
+        // Save pause time
+        pauseStartTime = Date.now();
+
+        // Kill physics loop
+        clearTimeout(tickTimeout);
+        tickTimeout = null;
+
+    } else {
+        // RESUME
+        console.log("Game Resumed");
+        overlay.classList.add('hidden');
+
+        // Resume audio context and MP3
+        if (arcade.audioCtx) {
+            arcade.audioCtx.resume();
+        }
+        // Resume MP3 music (continues from where it left off)
+        if (arcade.audioElement && arcade.battleMusicActive) {
+            arcade.audioElement.play().catch(e => console.warn("Resume music failed:", e));
+        }
+
+        // Adjust game timer to account for pause duration
+        if (pauseStartTime > 0) {
+            const pauseDuration = Date.now() - pauseStartTime;
+            startTime += pauseDuration;
+            lastTickTime = Date.now(); // Reset physics delta
+            pauseStartTime = 0;
+        }
+
+        // Restart physics loop
+        tick();
+    }
+}
+
+// Global for canUnpause tracking
+let canUnpause = true;
+
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+        togglePause();
+    }
+});

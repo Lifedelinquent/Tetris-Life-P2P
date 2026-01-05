@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only allow public read/write to the 'matches' collection
+    match /matches/{matchId} {
+      allow read, write: if true;
+    }
+  }
+}

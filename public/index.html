@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris Life Battle</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <canvas id="arcade-bg"></canvas>
+    <canvas id="effects-canvas"
+        style="position: fixed; top: 0; left: 0; pointer-events: none; z-index: 10; background: transparent;"></canvas>
+
+    <!-- Login screen is now the first visible screen -->
+    <div id="login-screen" class="overlay">
+        <div style="position: absolute; top: 20px; right: 20px;">
+            <button id="music-toggle" class="arcade-btn-small">🎵 MUSIC: OFF</button>
+        </div>
+        <h1 class="neon-title">TetrisLife Battle:<br>
+            <img id="lobby-life-avatar" src="avatars/brianangry.png" alt="Lifedelinquent"
+                class="lobby-avatar">Lifedelinquent
+            V
+            Chronokoala<img id="lobby-chrono-avatar" src="avatars/fernandomad.png" alt="ChronoKoala"
+                class="lobby-avatar">
+        </h1>
+
+        <div class="rules-container">
+            <h3 style="color: #fff; margin-bottom: 15px; text-decoration: underline;">HOW TO PLAY</h3>
+
+            <div class="rule-item">
+                <span class="icon">🎮</span>
+                <span>
+                    <li><strong>Controls:</strong> Arrow Keys to Move/Rotate. Space to Drop.</li>
+                    <li><strong>Hold:</strong> Press 'C' or 'Shift' to swap held piece.</li>
+                    <li><strong>Pause:</strong> Press 'P' or 'Esc' to pause/unpause the game.</li>
+                    <li><strong>Powerups:</strong> Spend cleared lines to use powerups! [S] [R] [E] keys.</li>
+                </span>
+            </div>
+            <div class="rule-item">
+                <span class="icon">🛡️</span>
+                <span><strong>SHIELD [S] - 3 Lines:</strong> Blocks the next incoming garbage attack completely.</span>
+            </div>
+            <div class="rule-item">
+                <span class="icon">⚡</span>
+                <span><strong>LIGHTNING [R] - 6 Lines:</strong> Instantly get 3 long I-pieces in a row!</span>
+            </div>
+            <div class="rule-item">
+                <span class="icon">💣</span>
+                <span><strong>BOMB [E] - 9 Lines:</strong> Sends a timer bomb to opponent. 10s to defuse or +2
+                    garbage!</span>
+            </div>
+            <div class="rule-item">
+                <span class="icon">🌈</span>
+                <span><strong>COLOR BUSTER [Q] - 12 Lines:</strong> Removes ALL blocks of one color from your
+                    board!</span>
+            </div>
+        </div>
+
+        <div class="user-selection">
+            <div class="player-select-row">
+                <img id="btn-life-avatar" src="avatars/briannormal.png" alt="Lifedelinquent" class="btn-avatar hidden">
+                <button id="select-lifedelinquent" class="arcade-btn">Lifedelinquent</button>
+                <span id="life-ready-status" class="ready-indicator hidden">✓ READY</span>
+            </div>
+            <div class="player-select-row">
+                <img id="btn-chrono-avatar" src="avatars/fernandohappy.png" alt="ChronoKoala" class="btn-avatar hidden">
+                <button id="select-chronokoala" class="arcade-btn">ChronoKoala</button>
+                <span id="chrono-ready-status" class="ready-indicator hidden">✓ READY</span>
+            </div>
+            <button id="start-battle-btn" class="arcade-btn start-btn" disabled>START BATTLE</button>
+            <button id="select-solo" class="arcade-btn" style="background: #4a90e2; margin-top: 10px;">Solo
+                Mode</button>
+        </div>
+    </div>
+
+    <div id="game-container" class="hidden">
+        <!-- Pause Overlay -->
+        <div id="pause-overlay" class="overlay hidden"
+            style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;">
+            <div style="font-size: 5rem; color: #fff; text-shadow: 0 0 20px cyan, 0 0 40px cyan;">PAUSED</div>
+            <div style="font-size: 1.5rem; color: #aaa; margin-top: 20px;">Press 'P' or 'Esc' to Resume</div>
+        </div>
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="match-timer">
+                <span>TIME:</span> <span id="timer">02:00</span>
+            </div>
+            <div class="match-score">
+                <span id="p1-ko">0</span> - KO - <span id="p2-ko">0</span>
+            </div>
+            <div class="volume-control" style="display: flex; align-items: center; gap: 15px;">
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <label for="music-slider" style="font-size: 0.6rem; color: #aaa;">MUSIC</label>
+                        <input type="range" id="music-slider" min="0" max="1" step="0.05" value="0.5"
+                            style="width: 70px;" onkeydown="if(event.key.startsWith('Arrow')) event.preventDefault()">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <label for="sfx-slider" style="font-size: 0.6rem; color: #aaa;">SFX</label>
+                        <input type="range" id="sfx-slider" min="0" max="1" step="0.05" value="0.5" style="width: 70px;"
+                            onkeydown="if(event.key.startsWith('Arrow')) event.preventDefault()">
+                    </div>
+                </div>
+                <button id="ingame-music-toggle" class="arcade-btn-mini" tabindex="-1">🔊</button>
+            </div>
+        </div>
+
+        <div class="split-screen-container">
+            <!-- P1 (Left) -->
+            <div class="player-split p1-split">
+                <div class="player-header">
+                    <h2 class="player-name p1-color">LIFEDELINQUENT</h2>
+                    <div class="player-stats">
+                        <span>WINS: <span id="p1-lifetime-wins">0</span></span>
+                        <span>SCORE: <span id="p1-pb">0</span></span>
+                    </div>
+                    <div id="p1-combo-container"
+                        style="width: 100px; height: 8px; background: #333; margin: 5px auto; display: none; border: 1px solid #555;">
+                        <div id="p1-combo-fill"
+                            style="height: 100%; width: 0%; background: linear-gradient(90deg, #0DC2FF, #FF0D72); transition: width 0.2s;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="board-area">
+                    <div class="side-panel left">
+                        <div class="hold-box">
+                            <div class="label">HOLD</div>
+                            <canvas id="p1-hold" width="100" height="100"></canvas>
+                        </div>
+
+                        <!-- Powerups (Icon Based) - Disabled until earned -->
+                        <div class="power-ups" id="p1-powerups"
+                            style="display: flex; flex-direction: column; gap: 10px;">
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button class="power-icon" id="p1-shield-btn" disabled
+                                    title="Shield - Block next attack">
+                                    <img src="images/icon_shield.png" alt="Shield" class="power-img">
+                                </button>
+                                <span style="font-size: 0.7rem; color: #aaa;">[S]</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button class="power-icon" id="p1-rush-btn" disabled title="Lightning - Get 3 I-pieces">
+                                    <img src="images/icon_lightning.png" alt="Rush" class="power-img">
+                                </button>
+                                <span style="font-size: 0.7rem; color: #aaa;">[R]</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button class="power-icon" id="p1-twin-btn" disabled
+                                    title="Bomb - Mess up opponent's top">
+                                    <img src="images/icon_bomb.png" alt="Bomb" class="power-img">
+                                </button>
+                                <span style="font-size: 0.7rem; color: #aaa;">[E]</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button class="power-icon" id="p1-buster-btn" disabled
+                                    title="Color Buster - Remove all blocks of one color">
+                                    <img src="images/icon_buster.png" alt="Color Buster" class="power-img">
+                                </button>
+                                <span style="font-size: 0.7rem; color: #aaa;">[Q]</span>
+                            </div>
+                        </div>
+                        <!-- P1 Avatar (Brian/Lifedelinquent) - Left side for symmetry with Fernando -->
+                        <div class="avatar-container" style="margin-top: 20px; text-align: center;">
+                            <img id="p1-avatar" src="avatars/briannormal.png" alt="Lifedelinquent"
+                                style="width: 120px; border-radius: 10px; border: 2px solid #0DFF72;">
+                            <div class="lines-sent-box">
+                                <span class="lines-sent-label">⚔️ ATTACK</span>
+                                <span id="p1-lines-sent" class="lines-sent-value">0</span>
+                            </div>
+                            <!-- Shield Status (Moved Here) -->
+                            <div id="p1-shield-indicator" class="shield-indicator hidden">
+                                <div class="shield-active-glow">Shield Active</div>
+                                <span class="shield-emoji">🛡️</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="main-board-container p1-border" style="position: relative;">
+                        <div class="garbage-meter" id="p1-garbage-meter"></div>
+
+                        <canvas id="p1-canvas" width="480" height="800"></canvas>
+                    </div>
+
+                    <div class="side-panel right">
+                        <div class="next-box">
+                            <div class="label">NEXT</div>
+                            <canvas id="p1-next" width="100" height="300"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VS Divider -->
+            <div class="vs-divider">
+                <div class="vs-text">VS</div>
+            </div>
+
+            <!-- P2 (Right) -->
+            <div class="player-split p2-split">
+                <div class="player-header">
+                    <h2 class="player-name p2-color">CHRONOKOALA</h2>
+                    <div class="player-stats">
+                        <span>WINS: <span id="p2-lifetime-wins">0</span></span>
+                        <span>SCORE: <span id="p2-pb">0</span></span>
+                    </div>
+                    <div id="p2-combo-container"
+                        style="width: 100px; height: 8px; background: #333; margin: 5px auto; display: none; border: 1px solid #555;">
+                        <div id="p2-combo-fill"
+                            style="height: 100%; width: 0%; background: linear-gradient(90deg, #0DC2FF, #FF0D72); transition: width 0.2s;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="board-area">
+                    <div class="side-panel left">
+                        <div class="hold-box">
+                            <div class="label">HOLD</div>
+                            <canvas id="p2-hold" width="100" height="100"></canvas>
+                        </div>
+
+                        <!-- Powerups (Mirrored for P2) - Same layout as P1 -->
+                        <div class="power-ups" id="p2-powerups"
+                            style="display: flex; flex-direction: column; gap: 10px;">
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button class="power-icon" id="p2-shield-btn" disabled
+                                    title="Shield - Block next attack">
+                                    <img src="images/icon_shield.png" alt="Shield" class="power-img">
+                                </button>
+                                <span style="font-size: 0.7rem; color: #aaa;">[S]</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button class="power-icon" id="p2-rush-btn" disabled title="Lightning - Get 3 I-pieces">
+                                    <img src="images/icon_lightning.png" alt="Rush" class="power-img">
+                                </button>
+                                <span style="font-size: 0.7rem; color: #aaa;">[R]</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button class="power-icon" id="p2-twin-btn" disabled
+                                    title="Bomb - Mess up opponent's top">
+                                    <img src="images/icon_bomb.png" alt="Bomb" class="power-img">
+                                </button>
+                                <span style="font-size: 0.7rem; color: #aaa;">[E]</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button class="power-icon" id="p2-buster-btn" disabled
+                                    title="Color Buster - Remove all blocks of one color">
+                                    <img src="images/icon_buster.png" alt="Color Buster" class="power-img">
+                                </button>
+                                <span style="font-size: 0.7rem; color: #aaa;">[Q]</span>
+                            </div>
+                        </div>
+                        <!-- P2 Avatar (Fernando/ChronoKoala) - Left side to match P1 -->
+                        <div class="avatar-container" style="margin-top: 20px; text-align: center;">
+                            <img id="p2-avatar" src="avatars/fernandonormal.png" alt="ChronoKoala"
+                                style="width: 120px; border-radius: 10px; border: 2px solid #F538FF;">
+                            <div class="lines-sent-box p2-theme">
+                                <span class="lines-sent-label">⚔️ ATTACK</span>
+                                <span id="p2-lines-sent" class="lines-sent-value">0</span>
+                            </div>
+                            <!-- Shield Status (Moved Here) -->
+                            <div id="p2-shield-indicator" class="shield-indicator hidden p2-theme">
+                                <div class="shield-active-glow">Shield Active</div>
+                                <span class="shield-emoji">🛡️</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="main-board-container p2-border" style="position: relative;">
+                        <div class="garbage-meter" id="p2-garbage-meter"></div>
+
+                        <canvas id="p2-canvas" width="480" height="800"></canvas>
+                    </div>
+
+                    <div class="side-panel right">
+                        <div class="next-box">
+                            <div class="label">NEXT</div>
+                            <canvas id="p2-next" width="100" height="300"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Powerup Tooltip (Absolute Centered or Fixed) -->
+        <div id="powerup-tooltip" class="tooltip hidden">Test Description</div>
+    </div>
+
+    <div id="countdown-overlay" class="overlay hidden">
+        <h1 id="countdown-text" class="neon-title" style="font-size: 8rem; animation: pulse 0.5s infinite;">3</h1>
+    </div>
+
+    <div id="game-over-screen" class="overlay hidden" style="z-index: 150;">
+        <h2 id="winner-text" class="neon-title" style="margin-bottom: 30px;"></h2>
+        <div style="display: flex; gap: 20px;">
+            <button id="restart-btn" class="arcade-btn">PLAY AGAIN</button>
+            <button id="quit-btn" class="arcade-btn"
+                style="border-color: #ff3333; color: #ff3333; text-shadow: 0 0 5px #ff3333;">QUIT</button>
+        </div>
+    </div>
+
+    <script>
+        window.addEventListener('error', function (e) {
+            console.error(e);
+            // alert('Javascript Error: ' + e.message); 
+        });
+    </script>
+    <script type="module" src="main.js?v=8"
+        onerror="alert('Failed to load main.js module. Check console for CORS or Syntax errors.')"></script>
+</body>
+
+</html>

@@ -1,0 +1,629 @@
+body {
+    background-color: #1a1a1a;
+    color: white;
+    font-family: 'Press Start 2P', cursive;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    overflow: hidden;
+}
+
+/* Lobby System Styles */
+.player-select-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin: 10px 0;
+}
+
+.ready-indicator {
+    color: #0DFF72;
+    font-size: 0.8rem;
+    text-shadow: 0 0 10px #0DFF72, 0 0 20px #0DFF72;
+    animation: pulse-glow 1s infinite;
+}
+
+@keyframes pulse-glow {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+.start-btn {
+    background: #0DFF72 !important;
+    color: #000 !important;
+    border-color: #0DFF72 !important;
+    box-shadow: 0 0 20px #0DFF72, 0 0 40px #0DFF72 !important;
+    margin-top: 20px !important;
+    font-size: 1.2rem !important;
+}
+
+.start-btn:disabled {
+    background: #333 !important;
+    color: #666 !important;
+    border-color: #555 !important;
+    box-shadow: none !important;
+    cursor: not-allowed;
+}
+
+.start-btn:not(:disabled):hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 30px #0DFF72, 0 0 60px #0DFF72 !important;
+}
+
+.arcade-btn.selected {
+    background: #0DFF72 !important;
+    color: #000 !important;
+    border-color: #0DFF72 !important;
+}
+
+/* Arcade-style Lines Sent Counter */
+.lines-sent-box {
+    margin-top: 10px;
+    background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+    border: 3px solid #0DFF72;
+    border-radius: 10px;
+    padding: 8px 12px;
+    box-shadow: 0 0 15px #0DFF72, inset 0 0 10px rgba(13, 255, 114, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.lines-sent-box.p2-theme {
+    border-color: #FF0D72;
+    box-shadow: 0 0 15px #FF0D72, inset 0 0 10px rgba(255, 13, 114, 0.2);
+}
+
+.lines-sent-label {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 0.6rem;
+    color: #fff;
+    text-shadow: 0 0 5px #fff;
+    letter-spacing: 1px;
+}
+
+.lines-sent-value {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 1.8rem;
+    color: #0DFF72;
+    text-shadow: 0 0 10px #0DFF72, 0 0 20px #0DFF72, 0 0 30px #0DFF72;
+    animation: pulse-glow 1.5s infinite;
+}
+
+.p2-theme .lines-sent-value {
+    color: #FF0D72;
+    text-shadow: 0 0 10px #FF0D72, 0 0 20px #FF0D72, 0 0 30px #FF0D72;
+}
+
+#arcade-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* More transparent to see falling Tetris pieces background */
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+.neon-title {
+    text-align: center;
+    color: #fff;
+    text-shadow:
+        0 0 5px #fff,
+        0 0 10px #fff,
+        0 0 20px #ff00de,
+        0 0 30px #ff00de,
+        0 0 40px #ff00de,
+        0 0 55px #ff00de,
+        0 0 75px #ff00de;
+    line-height: 1.5;
+    margin-bottom: 50px;
+    font-size: 2rem;
+}
+
+.user-selection button.arcade-btn,
+.overlay button.arcade-btn {
+    padding: 20px 40px;
+    font-size: 1rem;
+    font-family: 'Press Start 2P', cursive;
+    margin: 20px;
+    cursor: pointer;
+    background: #000;
+    border: 4px solid #0DC2FF;
+    color: #0DC2FF;
+    text-transform: uppercase;
+    box-shadow: 0 0 10px #0DC2FF, inset 0 0 10px #0DC2FF;
+    transition: all 0.1s;
+    position: relative;
+    /* Big Arcade Button Look */
+    border-radius: 50px;
+    /* Rounder */
+    min-width: 200px;
+}
+
+.overlay button.arcade-btn:active {
+    transform: scale(0.95) translateY(4px);
+    /* Press effect */
+    box-shadow: 0 0 5px #0DC2FF, inset 0 0 5px #0DC2FF;
+}
+
+.user-selection button.arcade-btn:hover {
+    background: #0DC2FF;
+    color: #000;
+    box-shadow: 0 0 20px #0DC2FF, inset 0 0 20px #0DC2FF;
+    transform: scale(1.05);
+}
+
+.user-selection button.arcade-btn:active {
+    transform: scale(0.95);
+}
+
+.arcade-btn-small {
+    padding: 10px 15px;
+    font-size: 0.7rem;
+    font-family: 'Press Start 2P', cursive;
+    cursor: pointer;
+    background: #000;
+    border: 2px solid #0DFF72;
+    color: #0DFF72;
+    text-transform: uppercase;
+    box-shadow: 0 0 5px #0DFF72;
+    transition: all 0.1s;
+}
+
+.arcade-btn-small:hover {
+    background: #0DFF72;
+    color: #000;
+    box-shadow: 0 0 10px #0DFF72;
+    box-shadow: 0 0 10px #0DFF72;
+}
+
+/* Rules Section */
+.rules-container {
+    background: rgba(0, 0, 0, 0.8);
+    border: 2px solid #fff;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 30px;
+    max-width: 600px;
+    text-align: left;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+.rule-item {
+    font-size: 0.7rem;
+    /* Small for Arcade Font */
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    line-height: 1.4;
+    color: #ccc;
+}
+
+.rule-item .icon {
+    font-size: 1.5rem;
+    min-width: 40px;
+    text-align: center;
+    text-shadow: 0 0 10px currentColor;
+    /* Glow based on emoji color effectively */
+}
+
+.rule-item strong {
+    color: #0DC2FF;
+    text-shadow: 0 0 5px #0DC2FF;
+}
+
+/* --- Layout & Structure --- */
+
+#game-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
+    position: relative;
+    background: rgba(0, 0, 0, 0.85);
+    /* Darken background for contrast */
+}
+
+/* Top Bar */
+.top-bar {
+    height: 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 40px;
+    background: #000;
+    border-bottom: 2px solid #555;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+}
+
+.match-timer {
+    font-size: 1.2rem;
+    color: #fff;
+    text-shadow: 0 0 10px #fff;
+}
+
+#timer {
+    color: #e74c3c;
+    margin-left: 10px;
+}
+
+.match-score {
+    font-size: 1.5rem;
+    color: #f1c40f;
+    text-shadow: 0 0 10px #f1c40f;
+}
+
+/* Split Screen */
+.split-screen-container {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+}
+
+.player-split {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    position: relative;
+}
+
+.p1-split {
+    background: linear-gradient(180deg, rgba(13, 194, 255, 0.05) 0%, rgba(0, 0, 0, 0) 100%);
+    border-right: 2px solid #333;
+}
+
+.p2-split {
+    background: linear-gradient(180deg, rgba(255, 13, 114, 0.05) 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+/* VS Divider */
+.vs-divider {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 60px;
+    height: 60px;
+    background: #000;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 20;
+    box-shadow: 0 0 20px #fff;
+}
+
+.vs-text {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 5px #fff;
+}
+
+/* Player Headers */
+.player-header {
+    text-align: center;
+    margin-bottom: 20px;
+    width: 100%;
+}
+
+.player-name {
+    font-size: 1.5rem;
+    margin: 0;
+    letter-spacing: 2px;
+}
+
+.p1-color {
+    color: #0DC2FF;
+    text-shadow: 0 0 15px #0DC2FF;
+}
+
+.p2-color {
+    color: #FF0D72;
+    text-shadow: 0 0 15px #FF0D72;
+}
+
+.player-stats {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 10px;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+
+.player-stats span span {
+    color: #fff;
+}
+
+/* Board Area Layout */
+.board-area {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+}
+
+.side-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 80px;
+}
+
+.label {
+    font-size: 0.7rem;
+    color: #aaa;
+    margin-bottom: 5px;
+    text-align: center;
+}
+
+canvas {
+    background: #000;
+    display: block;
+    height: 100%;
+    width: auto;
+}
+
+/* Main Board Containers */
+/* Main Board Containers */
+.main-board-container {
+    display: flex;
+    background: #000;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+    height: 75vh;
+    width: auto;
+    aspect-ratio: 420 / 800;
+}
+
+.p1-border {
+    border: 4px solid #0DC2FF;
+    box-shadow: 0 0 20px rgba(13, 194, 255, 0.3);
+}
+
+.p2-border {
+    border: 4px solid #FF0D72;
+    box-shadow: 0 0 20px rgba(255, 13, 114, 0.3);
+}
+
+/* Meters & Small Canvases */
+.garbage-meter {
+    width: 20px;
+    height: 100%;
+    background: #111;
+    border-right: 1px solid #333;
+    position: relative;
+}
+
+.garbage-fill {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    background: #e74c3c;
+    transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px #e74c3c;
+}
+
+#p1-hold,
+#p1-next,
+#p2-hold,
+#p2-next {
+    border: 2px solid #333;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+/* Powerups - Icon Style */
+.power-ups {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 20px;
+    align-items: center;
+}
+
+.power-icon {
+    width: 60px;
+    height: 60px;
+    /* font-size: 2rem; Removed, using images now */
+    background: #000;
+    border: 3px solid #555;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.1s;
+    /* color: #fff; Removed */
+    /* opacity: 0.5; Managed by disabled state */
+    padding: 0;
+    /* Ensure no padding affects image size */
+    overflow: hidden;
+    /* Clip rounded corners */
+}
+
+.power-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.power-icon:hover:not(:disabled) {
+    border-color: #f1c40f;
+    box-shadow: 0 0 15px #f1c40f;
+    transform: scale(1.1);
+    /* opacity: 1; */
+}
+
+.power-icon:disabled {
+    cursor: not-allowed;
+    border-color: #333;
+    filter: grayscale(100%) brightness(0.5);
+    /* Grayscale for disabled state */
+    opacity: 0.7;
+}
+
+.power-icon.active {
+    border-color: #f1c40f;
+    background: rgba(241, 196, 15, 0.2);
+    box-shadow: 0 0 20px #f1c40f, inset 0 0 10px #f1c40f;
+    opacity: 1;
+    animation: pulse 1s infinite;
+}
+
+#p1-shield-btn:hover {
+    border-color: #3498db;
+    box-shadow: 0 0 15px #3498db;
+}
+
+#p1-rush-btn:hover {
+    border-color: #f1c40f;
+    box-shadow: 0 0 15px #f1c40f;
+}
+
+#p1-twin-btn:hover {
+    border-color: #e74c3c;
+    box-shadow: 0 0 15px #e74c3c;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1400px) {
+    .boards-wrapper {
+        gap: 20px;
+    }
+}
+
+/* Tooltip Styling */
+.tooltip {
+    position: absolute;
+    bottom: 120px;
+    /* Above controls/bottom area */
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.9);
+    border: 2px solid #0DFF72;
+    color: #0DFF72;
+    padding: 10px 20px;
+    font-family: 'Press Start 2P', system-ui;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    box-shadow: 0 0 15px rgba(13, 255, 114, 0.3);
+    pointer-events: none;
+    /* Don't block clicks */
+    z-index: 150;
+    white-space: nowrap;
+    transition: opacity 0.2s;
+}
+
+.tooltip.hidden {
+    opacity: 0;
+}
+
+/* Single Player Mode */
+body.single-player .p2-split,
+body.single-player .vs-divider {
+    display: none !important;
+}
+
+body.single-player .game-container {
+    grid-template-columns: 1fr;
+    max-width: 800px;
+    /* Slightly wider to feel grand */
+    margin: 0 auto;
+}
+
+body.single-player .p1-split {
+    border-right: none;
+    margin: 0 auto;
+}
+
+body.single-player .p1-border {
+    margin: 0 auto;
+}
+
+/* Danger Mode */
+@keyframes danger-pulse {
+    0% {
+        box-shadow: inset 0 0 20px #ff0000, 0 0 20px #ff0000;
+        border-color: #ff0000;
+    }
+
+    50% {
+        box-shadow: inset 0 0 50px #ff0000, 0 0 40px #ff0000;
+        border-color: #ff0000;
+    }
+
+    100% {
+        box-shadow: inset 0 0 20px #ff0000, 0 0 20px #ff0000;
+        border-color: #ff0000;
+    }
+}
+
+.danger-mode {
+    animation: danger-pulse 0.5s infinite;
+}
+
+/* Floating Text */
+.floating-text {
+    position: absolute;
+    font-family: 'Press Start 2P', cursive;
+    pointer-events: none;
+    z-index: 1000;
+    text-shadow: 2px 2px 0 #000;
+    white-space: nowrap;
+}
+
+/* Combo Meter (Simple Heat Bar) */
+#combo-container {
+    margin-top: 10px;
+    width: 100px;
+    /* Match Next/Hold canvas width approx */
+    height: 10px;
+    background: #333;
+    border: 1px solid #555;
+    position: relative;
+    display: none;
+    /* Hidden by default until combo starts */
+}
+
+#combo-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #0DC2FF, #FFE138, #FF0D72);
+    transition: width 0.2s ease-out;
+    box-shadow: 0 0 10px currentColor;
+}
