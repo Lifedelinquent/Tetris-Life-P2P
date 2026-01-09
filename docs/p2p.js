@@ -419,6 +419,16 @@ export class P2PHandler {
         this.gameState.pauseState = pauseState;
         this.send('pause', pauseState);
         console.log(`${this.userId} ${isPaused ? 'paused' : 'unpaused'} the game`);
+
+        // Also apply pause locally
+        if (this.callbacks.onPause) {
+            this.callbacks.onPause({
+                paused: pauseState.paused,
+                pausedBy: pauseState.pausedBy,
+                pausedAt: pauseState.pausedAt,
+                canUnpause: true // Player who paused can always unpause
+            });
+        }
     }
 
     listenToPause(callback) {
