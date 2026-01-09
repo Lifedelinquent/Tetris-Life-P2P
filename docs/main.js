@@ -1113,12 +1113,12 @@ function setupP2PReadySystem() {
     });
 
     // Listen for match start
-    fb.listenToMatchStart((timestamp) => {
+    fb.listenToMatchStart(async (timestamp) => {
         console.log("Match start received:", timestamp);
         // Hide P2P screen, show game
         document.getElementById('p2p-screen').classList.add('hidden');
         document.getElementById('game-container').classList.remove('hidden');
-        initGame(selectedUserId);
+        await initGame(selectedUserId);
         startCountdown(timestamp);
     });
 }
