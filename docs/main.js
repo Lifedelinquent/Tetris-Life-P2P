@@ -1098,6 +1098,8 @@ function setupP2PReadySystem() {
     fb.listenToReadyStatus(({ lifeReady, chronoReady }) => {
         const p1Indicator = document.getElementById('p1-ready-indicator');
         const p2Indicator = document.getElementById('p2-ready-indicator');
+        const p1Avatar = document.getElementById('lobby-p1-avatar');
+        const p2Avatar = document.getElementById('lobby-p2-avatar');
 
         if (p1Indicator) {
             p1Indicator.innerText = lifeReady ? '✓ READY!' : '⏳ Not Ready';
@@ -1106,6 +1108,14 @@ function setupP2PReadySystem() {
         if (p2Indicator) {
             p2Indicator.innerText = chronoReady ? '✓ READY!' : '⏳ Not Ready';
             p2Indicator.style.color = chronoReady ? '#0DFF72' : '#FFD700';
+        }
+
+        // Switch avatars to angry faces when ready (battle mode!)
+        if (p1Avatar) {
+            p1Avatar.src = lifeReady ? 'avatars/brianangry.png' : 'avatars/briannormal.png';
+        }
+        if (p2Avatar) {
+            p2Avatar.src = chronoReady ? 'avatars/fernandomad.png' : 'avatars/fernandonormal.png';
         }
 
         // If both ready, host triggers match start

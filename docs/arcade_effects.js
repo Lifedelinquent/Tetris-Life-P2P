@@ -695,7 +695,7 @@ export class ArcadeManager {
         });
     }
 
-    fadeIn(targetVolume = 0.4, duration = 1500) {
+    fadeIn(targetVolume = 0.3, duration = 1500) {
         if (this.fadeInterval) clearInterval(this.fadeInterval);
 
         const steps = 30;
