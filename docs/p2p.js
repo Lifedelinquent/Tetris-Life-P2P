@@ -292,6 +292,15 @@ export class P2PHandler {
         this.gameState[`ready_${userId}`] = Date.now();
         this.send('ready', { userId, timestamp: Date.now() });
         console.log(`${userId} is ready!`);
+
+        // Update local UI immediately
+        if (this.callbacks.onReadyStatus) {
+            this.callbacks.onReadyStatus({
+                lifeReady: !!this.gameState.ready_Lifedelinquent,
+                chronoReady: !!this.gameState.ready_ChronoKoala
+            });
+        }
+
         this.checkBothReady();
     }
 
@@ -354,8 +363,15 @@ export class P2PHandler {
             timestamp: Date.now()
         };
         this.gameState.matchStart = startData;
+        this.lastStartTime = startData.timestamp; // Prevent duplicate handling
         this.send('matchStart', startData);
         console.log('Match start triggered');
+
+        // Also start the host's own game
+        if (this.callbacks.onMatchStart) {
+            this.callbacks.onMatchStart(startData.startTime);
+        }
+
         return startData.startTime;
     }
 
