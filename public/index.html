@@ -9,6 +9,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <!-- PeerJS for P2P connections -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 
 <body>
@@ -16,10 +18,95 @@
     <canvas id="effects-canvas"
         style="position: fixed; top: 0; left: 0; pointer-events: none; z-index: 10; background: transparent;"></canvas>
 
-    <!-- Login screen is now the first visible screen -->
-    <div id="login-screen" class="overlay">
+    <!-- P2P Connection Screen (First Screen) -->
+    <div id="p2p-screen" class="overlay">
         <div style="position: absolute; top: 20px; right: 20px;">
             <button id="music-toggle" class="arcade-btn-small">🎵 MUSIC: OFF</button>
+        </div>
+        <h1 class="neon-title">TetrisLife Battle</h1>
+        <h2 style="color: #aaa; margin-bottom: 30px; font-size: 1rem;">P2P Edition - No Limits!</h2>
+
+        <!-- Connection Options -->
+        <div id="connection-options" class="user-selection">
+            <button id="create-room-btn" class="arcade-btn" style="background: linear-gradient(135deg, #0DFF72, #0DC2FF); color: #000;">
+                🏠 CREATE ROOM
+            </button>
+            <button id="join-room-btn" class="arcade-btn" style="background: linear-gradient(135deg, #F538FF, #FF0D72); color: #000;">
+                🔗 JOIN ROOM
+            </button>
+            <button id="select-solo" class="arcade-btn" style="background: #4a90e2; margin-top: 20px;">
+                Solo Mode
+            </button>
+        </div>
+
+        <!-- Create Room (Hidden Initially) -->
+        <div id="create-room-panel" class="user-selection hidden">
+            <h3 style="color: #0DFF72; margin-bottom: 20px;">📡 CREATING ROOM...</h3>
+            <div id="room-code-display" style="font-size: 4rem; color: #fff; letter-spacing: 15px; 
+                text-shadow: 0 0 20px #0DFF72, 0 0 40px #0DFF72; margin: 30px 0;">
+                ----
+            </div>
+            <p style="color: #aaa; font-size: 0.8rem; margin-bottom: 20px;">Share this code with your friend!</p>
+            <div id="host-status" style="color: #FFD700; font-size: 0.9rem;">⏳ Waiting for opponent...</div>
+            <button id="cancel-create-btn" class="arcade-btn" style="margin-top: 30px; border-color: #ff3333; color: #ff3333;">
+                ✖ CANCEL
+            </button>
+        </div>
+
+        <!-- Join Room (Hidden Initially) -->
+        <div id="join-room-panel" class="user-selection hidden">
+            <h3 style="color: #F538FF; margin-bottom: 20px;">🔗 JOIN ROOM</h3>
+            <p style="color: #aaa; font-size: 0.8rem; margin-bottom: 15px;">Enter the 4-character room code:</p>
+            <input type="text" id="room-code-input" maxlength="4" 
+                style="font-family: 'Press Start 2P', cursive; font-size: 2.5rem; width: 200px; 
+                text-align: center; letter-spacing: 10px; padding: 15px; background: #1a1a2e; 
+                border: 3px solid #F538FF; color: #fff; text-transform: uppercase;"
+                placeholder="----">
+            <div id="join-error" style="color: #ff3333; font-size: 0.8rem; margin-top: 10px; min-height: 20px;"></div>
+            <div style="display: flex; gap: 15px; margin-top: 20px;">
+                <button id="confirm-join-btn" class="arcade-btn" style="background: linear-gradient(135deg, #F538FF, #FF0D72); color: #000;">
+                    ✓ JOIN
+                </button>
+                <button id="cancel-join-btn" class="arcade-btn" style="border-color: #aaa; color: #aaa;">
+                    ✖ BACK
+                </button>
+            </div>
+        </div>
+
+        <!-- Connected Panel (Shown after connection) -->
+        <div id="connected-panel" class="user-selection hidden">
+            <h3 style="color: #0DFF72; margin-bottom: 20px;">✓ CONNECTED!</h3>
+            <div style="display: flex; justify-content: center; align-items: center; gap: 30px; margin: 30px 0;">
+                <div style="text-align: center;">
+                    <img src="avatars/briannormal.png" alt="Lifedelinquent" 
+                        style="width: 100px; border-radius: 10px; border: 3px solid #0DFF72;">
+                    <div style="color: #0DFF72; margin-top: 10px;">Lifedelinquent</div>
+                    <div id="p1-ready-indicator" style="color: #FFD700; font-size: 0.8rem; margin-top: 5px;">
+                        ⏳ Not Ready
+                    </div>
+                </div>
+                <div style="font-size: 2rem; color: #fff;">VS</div>
+                <div style="text-align: center;">
+                    <img src="avatars/fernandonormal.png" alt="ChronoKoala" 
+                        style="width: 100px; border-radius: 10px; border: 3px solid #F538FF;">
+                    <div style="color: #F538FF; margin-top: 10px;">ChronoKoala</div>
+                    <div id="p2-ready-indicator" style="color: #FFD700; font-size: 0.8rem; margin-top: 5px;">
+                        ⏳ Not Ready
+                    </div>
+                </div>
+            </div>
+            <div id="your-role" style="color: #aaa; font-size: 0.9rem; margin-bottom: 20px;">You are: ---</div>
+            <button id="ready-btn" class="arcade-btn" style="background: linear-gradient(135deg, #FFD700, #FFA500); color: #000; font-size: 1.2rem;">
+                ✓ READY!
+            </button>
+            <p style="color: #666; font-size: 0.7rem; margin-top: 15px;">Game starts when both players are ready</p>
+        </div>
+    </div>
+
+    <!-- Old Login screen - keeping for rules reference, hidden by default now -->
+    <div id="login-screen" class="overlay hidden">
+        <div style="position: absolute; top: 20px; right: 20px;">
+            <button id="music-toggle-old" class="arcade-btn-small">🎵 MUSIC: OFF</button>
         </div>
         <h1 class="neon-title">TetrisLife Battle:<br>
             <img id="lobby-life-avatar" src="avatars/brianangry.png" alt="Lifedelinquent"
@@ -56,7 +143,7 @@
             </div>
             <div class="rule-item">
                 <span class="icon">🌈</span>
-                <span><strong>COLOR BUSTER [Q] - 12 Lines:</strong> Removes ALL blocks of one color from your
+                <span><strong>COLOR BUSTER [Q] - 17 Lines:</strong> Removes ALL blocks of one color from your
                     board!</span>
             </div>
         </div>
@@ -73,8 +160,6 @@
                 <span id="chrono-ready-status" class="ready-indicator hidden">✓ READY</span>
             </div>
             <button id="start-battle-btn" class="arcade-btn start-btn" disabled>START BATTLE</button>
-            <button id="select-solo" class="arcade-btn" style="background: #4a90e2; margin-top: 10px;">Solo
-                Mode</button>
         </div>
     </div>
 

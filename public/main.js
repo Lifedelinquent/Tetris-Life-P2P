@@ -1,10 +1,9 @@
 import { TetrisEngine } from './tetris.js'; // Corrected Import
 import { BattleManager } from './battle.js';
 import { ArcadeManager } from './arcade_effects.js?v=3'; // Cache Busting
-import { FirebaseHandler } from './multiplayer.js';
-// import { MockFirebaseHandler } from './multiplayer.js';
+import { P2PHandler } from './p2p.js';
 
-let fb = new FirebaseHandler();
+let fb = null; // Will be initialized when P2P connection is established
 const arcade = new ArcadeManager();
 arcade.init(); // Initialize the Tetris background animation
 window.arcade = arcade; // Expose globally for debugging
@@ -33,8 +32,8 @@ function gameLoop() {
     // if (level >= 2) { arcade.setDrums(true); } else { arcade.setDrums(false); }
     arcade.setDrums(false);
 
-    // Speed: 1200ms start, decrease 90ms per level, min 150ms (reaches max speed at ~3:30 mins)
-    let targetSpeed = Math.max(150, 1200 - ((level - 1) * 90));
+    // Speed: 1200ms start, decrease 50ms per level, min 180ms (reaches max speed at ~5 mins)
+    let targetSpeed = Math.max(180, 1200 - ((level - 1) * 50));
 
     // Music Tempo Sync (MP3 Speed)
     // Safeguard: Ensure level is valid before setting tempo
@@ -128,6 +127,7 @@ window.addEventListener('load', () => {
                 const isPlaying = arcade.toggleMusic();
                 inGameMusicBtn.innerText = isPlaying ? "🔊" : "🔇";
                 if (isPlaying) arcade.playClickSound();
+                inGameMusicBtn.blur(); // Remove focus so spacebar doesn't trigger it
             });
         } else {
             console.warn("Mute button NOT found!");
@@ -165,9 +165,12 @@ async function initGame(userId) {
     gameInitialized = true;
     console.log("Initializing game for", userId);
 
-    // Start Real Firebase Handler
-    console.log("Starting Online Mode");
-    fb = new FirebaseHandler("main_match", userId);
+    // P2P handler should already be initialized during connection
+    // For solo mode, create a mock handler
+    if (userId === "Solo" && !fb) {
+        fb = { userId: "Solo", sendGameState: () => { }, sendAttack: () => { }, sendBomb: () => { }, setPause: () => { } };
+    }
+    console.log("Starting P2P Mode with user:", userId);
 
     try {
         let stats;
@@ -371,6 +374,12 @@ async function initGame(userId) {
                                 p2.score = p.score;
                                 updateAvatar();
                             }
+                            // Lines Sent (Attack Score)
+                            if (p.linesSent !== undefined) {
+                                const targetId = userId === "Lifedelinquent" ? 'p2-lines-sent' : 'p1-lines-sent';
+                                const el = document.getElementById(targetId);
+                                if (el) el.innerText = p.linesSent;
+                            }
                         }
                     }
 
@@ -418,6 +427,15 @@ function startCountdown(targetStartTime) {
     p1Battle.setupBombDetonation(); // Re-register bomb detonation callback
     score = 0; // RESET SCORE!
     document.getElementById('p1-pb').innerText = "0"; // Reset UI immediately
+
+    // Reset power-up UI (removes old highlights)
+    updatePowerUpUI();
+
+    // Reset lines-sent display for both players
+    const p1SentEl = document.getElementById('p1-lines-sent');
+    const p2SentEl = document.getElementById('p2-lines-sent');
+    if (p1SentEl) p1SentEl.innerText = '0';
+    if (p2SentEl) p2SentEl.innerText = '0';
 
     // Broadcast Empty State to Opponent immediately
     // This ensures they see us as empty even if they joined late or have old data
@@ -536,7 +554,8 @@ function handleLock(result) {
             type: p1.currentPiece,
             pos: p1.pos,
             rotation: p1.rotation,
-            score: score
+            score: score,
+            linesSent: p1Battle.linesSent
         });
     }
 
@@ -551,6 +570,9 @@ let lastTickTime = 0;
 
 function tick() {
     if (!matchActive || isPaused) return;
+
+    // Check bomb timers (only runs when game is active, not paused)
+    if (p1Battle) p1Battle.updateBombs();
 
     const now = Date.now();
     if (lastTickTime === 0) lastTickTime = now;
@@ -941,179 +963,202 @@ function setupPowerUpButton(prefix) {
 setupPowerUpButton('p1');
 setupPowerUpButton('p2');
 
-// --- LOBBY SYSTEM ---
+// --- P2P CONNECTION SYSTEM ---
 let selectedUserId = null;
-let lobbyFb = null;
+let isP2PReady = false;
 
-// Initialize lobby Firebase listener (before player selection)
-(async function initLobby() {
-    // Create a temporary Firebase handler just for lobby
-    lobbyFb = new FirebaseHandler("main_match", "lobby_watcher");
-
-    // Listen for ready status changes
-    lobbyFb.listenToReadyStatus(({ lifeReady, chronoReady }) => {
-        // Update ready indicators
-        const lifeStatus = document.getElementById('life-ready-status');
-        const chronoStatus = document.getElementById('chrono-ready-status');
-        const startBtn = document.getElementById('start-battle-btn');
-
-        if (lifeStatus) {
-            lifeStatus.classList.toggle('hidden', !lifeReady);
-        }
-        if (chronoStatus) {
-            chronoStatus.classList.toggle('hidden', !chronoReady);
-        }
-
-        // Sync avatar visibility for BOTH players (so each sees opponent's selection)
-        const lobbyLifeAvatar = document.getElementById('lobby-life-avatar');
-        const btnLifeAvatar = document.getElementById('btn-life-avatar');
-        const lobbyChronoAvatar = document.getElementById('lobby-chrono-avatar');
-        const btnChronoAvatar = document.getElementById('btn-chrono-avatar');
-
-        // Lifedelinquent avatar: hide title avatar when ready, show button avatar
-        if (lobbyLifeAvatar) lobbyLifeAvatar.classList.toggle('hidden', lifeReady);
-        if (btnLifeAvatar) btnLifeAvatar.classList.toggle('hidden', !lifeReady);
-
-        // ChronoKoala avatar: hide title avatar when ready, show button avatar
-        if (lobbyChronoAvatar) lobbyChronoAvatar.classList.toggle('hidden', chronoReady);
-        if (btnChronoAvatar) btnChronoAvatar.classList.toggle('hidden', !chronoReady);
-
-        // Enable START button if at least one player is ready
-        if (startBtn) {
-            startBtn.disabled = !(lifeReady || chronoReady);
-        }
-    });
-
-    // Listen for match start signal
-    lobbyFb.listenToMatchStart((timestamp) => {
-        console.log("Match Start Signal Received in Lobby:", new Date(timestamp));
-        if (selectedUserId && selectedUserId !== 'Solo') {
-            // Hide login, show game, init game
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('game-container').classList.remove('hidden');
-            initGame(selectedUserId);
-        }
-    });
-})();
-
-document.getElementById('select-lifedelinquent').onclick = async (e) => {
+// P2P Connection UI Handlers
+document.getElementById('create-room-btn').onclick = () => {
     arcade.playClickSound();
 
-    // Toggle ready/unready
-    if (selectedUserId === 'Lifedelinquent') {
-        // Already selected, unready
-        console.log("Unreadying Lifedelinquent");
-        selectedUserId = null;
-        e.target.classList.remove('selected');
+    // Hide options, show create panel
+    document.getElementById('connection-options').classList.add('hidden');
+    document.getElementById('create-room-panel').classList.remove('hidden');
 
-        // Show title avatar again, hide button avatar
-        const lobbyLifeAvatar = document.getElementById('lobby-life-avatar');
-        const btnLifeAvatar = document.getElementById('btn-life-avatar');
-        if (lobbyLifeAvatar) lobbyLifeAvatar.classList.remove('hidden');
-        if (btnLifeAvatar) btnLifeAvatar.classList.add('hidden');
+    // Create P2P handler and room
+    fb = new P2PHandler();
+    fb.createRoom(
+        // onReady - room created successfully
+        (roomCode) => {
+            console.log("Room created:", roomCode);
+            document.getElementById('room-code-display').innerText = roomCode;
+            document.getElementById('create-room-panel').querySelector('h3').innerText = '📡 ROOM READY!';
+        },
+        // onConnect - opponent joined
+        () => {
+            console.log("Opponent connected!");
+            document.getElementById('host-status').innerText = '✓ Opponent Connected!';
+            document.getElementById('host-status').style.color = '#0DFF72';
 
-        // Clear ready status in Firebase
-        const tempFb = new FirebaseHandler("main_match", "Lifedelinquent");
-        await tempFb.clearReadyForPlayer('Lifedelinquent');
-    } else {
-        // Select and ready
-        console.log("Selected Lifedelinquent");
-        selectedUserId = 'Lifedelinquent';
-        e.target.classList.add('selected');
-        document.getElementById('select-chronokoala').classList.remove('selected');
-
-        // Hide title avatar, show button avatar
-        const lobbyLifeAvatar = document.getElementById('lobby-life-avatar');
-        const btnLifeAvatar = document.getElementById('btn-life-avatar');
-        const lobbyChronoAvatar = document.getElementById('lobby-chrono-avatar');
-        const btnChronoAvatar = document.getElementById('btn-chrono-avatar');
-
-        if (lobbyLifeAvatar) lobbyLifeAvatar.classList.add('hidden');
-        if (btnLifeAvatar) btnLifeAvatar.classList.remove('hidden');
-        // Reset Chrono avatars (show title, hide button)
-        if (lobbyChronoAvatar) lobbyChronoAvatar.classList.remove('hidden');
-        if (btnChronoAvatar) btnChronoAvatar.classList.add('hidden');
-
-        // Set ready status in Firebase
-        const tempFb = new FirebaseHandler("main_match", "Lifedelinquent");
-        await tempFb.setReady('Lifedelinquent');
-    }
+            // Show connected panel
+            setTimeout(() => {
+                document.getElementById('create-room-panel').classList.add('hidden');
+                document.getElementById('connected-panel').classList.remove('hidden');
+                document.getElementById('your-role').innerText = 'You are: Lifedelinquent (Host)';
+                selectedUserId = 'Lifedelinquent';
+                setupP2PReadySystem();
+            }, 1000);
+        },
+        // onError
+        (err) => {
+            console.error("Create room error:", err);
+            document.getElementById('host-status').innerText = '❌ Error: ' + err.message;
+            document.getElementById('host-status').style.color = '#ff3333';
+        }
+    );
 };
 
-document.getElementById('select-chronokoala').onclick = async (e) => {
+document.getElementById('cancel-create-btn').onclick = () => {
     arcade.playClickSound();
+    if (fb) fb.destroy();
+    fb = null;
 
-    // Toggle ready/unready
-    if (selectedUserId === 'ChronoKoala') {
-        // Already selected, unready
-        console.log("Unreadying ChronoKoala");
-        selectedUserId = null;
-        e.target.classList.remove('selected');
-
-        // Show title avatar again, hide button avatar
-        const lobbyChronoAvatar = document.getElementById('lobby-chrono-avatar');
-        const btnChronoAvatar = document.getElementById('btn-chrono-avatar');
-        if (lobbyChronoAvatar) lobbyChronoAvatar.classList.remove('hidden');
-        if (btnChronoAvatar) btnChronoAvatar.classList.add('hidden');
-
-        // Clear ready status in Firebase
-        const tempFb = new FirebaseHandler("main_match", "ChronoKoala");
-        await tempFb.clearReadyForPlayer('ChronoKoala');
-    } else {
-        // Select and ready
-        console.log("Selected ChronoKoala");
-        selectedUserId = 'ChronoKoala';
-        document.getElementById('select-chronokoala').classList.add('selected');
-        document.getElementById('select-lifedelinquent').classList.remove('selected');
-
-        // Hide title avatar, show button avatar
-        const lobbyChronoAvatar = document.getElementById('lobby-chrono-avatar');
-        const btnChronoAvatar = document.getElementById('btn-chrono-avatar');
-        const lobbyLifeAvatar = document.getElementById('lobby-life-avatar');
-        const btnLifeAvatar = document.getElementById('btn-life-avatar');
-
-        if (lobbyChronoAvatar) lobbyChronoAvatar.classList.add('hidden');
-        if (btnChronoAvatar) btnChronoAvatar.classList.remove('hidden');
-        // Reset Life avatars (show title, hide button)
-        if (lobbyLifeAvatar) lobbyLifeAvatar.classList.remove('hidden');
-        if (btnLifeAvatar) btnLifeAvatar.classList.add('hidden');
-
-        // Set ready status in Firebase
-        const tempFb = new FirebaseHandler("main_match", "ChronoKoala");
-        await tempFb.setReady('ChronoKoala');
-    }
+    // Reset UI
+    document.getElementById('create-room-panel').classList.add('hidden');
+    document.getElementById('connection-options').classList.remove('hidden');
+    document.getElementById('room-code-display').innerText = '----';
+    document.getElementById('host-status').innerText = '⏳ Waiting for opponent...';
+    document.getElementById('host-status').style.color = '#FFD700';
 };
 
-document.getElementById('start-battle-btn').onclick = async () => {
+document.getElementById('join-room-btn').onclick = () => {
     arcade.playClickSound();
-    console.log("START BATTLE clicked!");
 
-    if (!selectedUserId) {
-        alert("Please select a player first!");
+    // Hide options, show join panel
+    document.getElementById('connection-options').classList.add('hidden');
+    document.getElementById('join-room-panel').classList.remove('hidden');
+    document.getElementById('room-code-input').focus();
+};
+
+document.getElementById('confirm-join-btn').onclick = () => {
+    arcade.playClickSound();
+
+    const roomCode = document.getElementById('room-code-input').value.trim().toUpperCase();
+    if (roomCode.length !== 4) {
+        document.getElementById('join-error').innerText = 'Please enter a 4-character code';
         return;
     }
 
-    // Trigger match start for everyone listening
-    const tempFb = new FirebaseHandler("main_match", selectedUserId);
-    await tempFb.clearReady(); // Clear ready status
-    await tempFb.triggerMatchStart();
+    document.getElementById('join-error').innerText = 'Connecting...';
+    document.getElementById('join-error').style.color = '#FFD700';
 
-    // Local player also starts
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('game-container').classList.remove('hidden');
-    initGame(selectedUserId);
+    // Create P2P handler and join room
+    fb = new P2PHandler();
+    fb.joinRoom(roomCode,
+        // onConnect
+        () => {
+            console.log("Connected to host!");
+            document.getElementById('join-error').innerText = '✓ Connected!';
+            document.getElementById('join-error').style.color = '#0DFF72';
+
+            // Show connected panel
+            setTimeout(() => {
+                document.getElementById('join-room-panel').classList.add('hidden');
+                document.getElementById('connected-panel').classList.remove('hidden');
+                document.getElementById('your-role').innerText = 'You are: ChronoKoala (Guest)';
+                selectedUserId = 'ChronoKoala';
+                setupP2PReadySystem();
+            }, 1000);
+        },
+        // onError
+        (err) => {
+            console.error("Join room error:", err);
+            document.getElementById('join-error').innerText = '❌ ' + err.message;
+            document.getElementById('join-error').style.color = '#ff3333';
+            if (fb) fb.destroy();
+            fb = null;
+        }
+    );
 };
 
+document.getElementById('cancel-join-btn').onclick = () => {
+    arcade.playClickSound();
+    if (fb) fb.destroy();
+    fb = null;
+
+    // Reset UI
+    document.getElementById('join-room-panel').classList.add('hidden');
+    document.getElementById('connection-options').classList.remove('hidden');
+    document.getElementById('room-code-input').value = '';
+    document.getElementById('join-error').innerText = '';
+};
+
+// Auto-uppercase room code input
+document.getElementById('room-code-input').addEventListener('input', (e) => {
+    e.target.value = e.target.value.toUpperCase();
+});
+
+// Setup P2P ready system after connection
+function setupP2PReadySystem() {
+    // Listen for ready status
+    fb.listenToReadyStatus(({ lifeReady, chronoReady }) => {
+        const p1Indicator = document.getElementById('p1-ready-indicator');
+        const p2Indicator = document.getElementById('p2-ready-indicator');
+
+        if (p1Indicator) {
+            p1Indicator.innerText = lifeReady ? '✓ READY!' : '⏳ Not Ready';
+            p1Indicator.style.color = lifeReady ? '#0DFF72' : '#FFD700';
+        }
+        if (p2Indicator) {
+            p2Indicator.innerText = chronoReady ? '✓ READY!' : '⏳ Not Ready';
+            p2Indicator.style.color = chronoReady ? '#0DFF72' : '#FFD700';
+        }
+
+        // If both ready, host triggers match start
+        if (lifeReady && chronoReady && fb.isHost && !isP2PReady) {
+            isP2PReady = true;
+            console.log("Both players ready, starting match...");
+            fb.triggerMatchStart();
+        }
+    });
+
+    // Listen for match start
+    fb.listenToMatchStart((timestamp) => {
+        console.log("Match start received:", timestamp);
+        // Hide P2P screen, show game
+        document.getElementById('p2p-screen').classList.add('hidden');
+        document.getElementById('game-container').classList.remove('hidden');
+        initGame(selectedUserId);
+        startCountdown(timestamp);
+    });
+}
+
+// Ready button handler
+document.getElementById('ready-btn').onclick = () => {
+    arcade.playClickSound();
+
+    const btn = document.getElementById('ready-btn');
+    const isReady = btn.classList.contains('ready');
+
+    if (isReady) {
+        // Unready
+        btn.classList.remove('ready');
+        btn.innerText = '✓ READY!';
+        btn.style.background = 'linear-gradient(135deg, #FFD700, #FFA500)';
+        fb.clearReadyForPlayer(selectedUserId);
+    } else {
+        // Ready up
+        btn.classList.add('ready');
+        btn.innerText = '⏳ WAITING...';
+        btn.style.background = 'linear-gradient(135deg, #0DFF72, #0DC2FF)';
+        fb.setReady(selectedUserId);
+    }
+};
+
+// Solo mode from P2P screen
 document.getElementById('select-solo').onclick = () => {
     arcade.playClickSound();
     console.log("Selected Solo Mode");
-    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('p2p-screen').classList.add('hidden');
     document.getElementById('game-container').classList.remove('hidden');
     initGame('Solo');
+    startCountdown(Date.now() + 3000);
 };
 
+// Old Firebase-based character selection removed - now using P2P connection flow above
+
 // Arcade Button Hover Sounds
-['select-lifedelinquent', 'select-chronokoala', 'select-solo'].forEach(id => {
+['create-room-btn', 'join-room-btn', 'select-solo', 'ready-btn'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) {
         btn.addEventListener('mouseenter', () => arcade.playHoverSound());
@@ -1242,8 +1287,8 @@ function applyLocalPause(shouldPause, canUnpauseLocal = true) {
         if (arcade.audioCtx) {
             arcade.audioCtx.resume();
         }
-        // Resume MP3 music (continues from where it left off)
-        if (arcade.audioElement && arcade.battleMusicActive) {
+        // Resume MP3 music only if not muted (check musicOn)
+        if (arcade.audioElement && arcade.battleMusicActive && arcade.musicOn) {
             arcade.audioElement.play().catch(e => console.warn("Resume music failed:", e));
         }
 

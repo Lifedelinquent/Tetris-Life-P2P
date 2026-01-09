@@ -19,7 +19,7 @@ export class BattleManager {
         this.SHIELD_COST = 3;          // Shield costs 3 lines
         this.LIGHTNING_COST = 6;       // Lightning costs 6 lines
         this.BOMB_COST = 9;            // Bomb costs 9 lines
-        this.COLOR_BUSTER_COST = 12;   // Color Buster costs 12 lines
+        this.COLOR_BUSTER_COST = 17;   // Color Buster costs 17 lines
 
         this.shieldActive = false; // Blocks next attack
         this.onShieldUsed = null; // Callback for when shield is consumed (set by main.js)
@@ -153,36 +153,49 @@ export class BattleManager {
         console.log('Received bomb! Next pieces:', this.engine.nextPieces);
     }
 
-    // Setup bomb detonation callback
+    // Setup bomb detonation callback - stores expiry time for game loop checking
     setupBombDetonation(onDetonateCallback) {
+        this.bombExpiresAt = null; // Track when bomb should detonate
+        console.log('setupBombDetonation called, setting up onBombPlaced callback');
+
         this.engine.onBombPlaced = (expiresAt) => {
-            const timeUntilDetonation = expiresAt - Date.now();
-            console.log(`Bomb placed! Detonating in ${timeUntilDetonation}ms (${timeUntilDetonation / 1000}s)`);
-
-            setTimeout(() => {
-                console.log('Bomb timer fired! Checking for active bombs...');
-                console.log('activeBombs:', this.engine.activeBombs);
-
-                // Always try to detonate - scan grid for any remaining BOMB blocks
-                const bombCount = this.engine.detonateBombs();
-                console.log('detonateBombs returned:', bombCount);
-
-                if (bombCount > 0) {
-                    console.log(`BOOM! Bomb detonated, adding 2 garbage lines`);
-                    // Add 2 lines of garbage
-                    this.pendingGarbage += 2;
-                    this.updateMeter();
-                    this.startDoTTimer();
-
-                    if (window.arcade) {
-                        const x = this.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
-                        window.arcade.createFloatingText("💥 BOOM! +2 LINES!", x, window.innerHeight * 0.4, '#FF0D72');
-                    }
-                } else {
-                    console.log('No bombs to detonate (all defused)');
-                }
-            }, timeUntilDetonation);
+            console.log(`onBombPlaced callback triggered! expiresAt=${expiresAt}, isPlayer1=${this.isPlayer1}`);
+            this.bombExpiresAt = expiresAt;
         };
+    }
+
+    // Called from main.js tick() - only runs when game is active (not paused)
+    updateBombs() {
+        if (!this.bombExpiresAt) return;
+
+        const now = Date.now();
+        const timeLeft = Math.ceil((this.bombExpiresAt - now) / 1000);
+        console.log(`updateBombs: timeLeft=${timeLeft}s, bombExpiresAt=${this.bombExpiresAt}`);
+        if (now >= this.bombExpiresAt) {
+            console.log('Bomb timer expired! Checking for active bombs...');
+            console.log('activeBombs:', this.engine.activeBombs);
+
+            // Always try to detonate - scan grid for any remaining BOMB blocks
+            const bombCount = this.engine.detonateBombs();
+            console.log('detonateBombs returned:', bombCount);
+
+            if (bombCount > 0) {
+                console.log(`BOOM! Bomb detonated, adding 2 garbage lines`);
+                // Add 2 lines of garbage
+                this.pendingGarbage += 2;
+                this.updateMeter();
+                this.startDoTTimer();
+
+                if (window.arcade) {
+                    const x = this.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+                    window.arcade.createFloatingText("💥 BOOM! +2 LINES!", x, window.innerHeight * 0.4, '#FF0D72');
+                }
+            } else {
+                console.log('No bombs to detonate (all defused)');
+            }
+
+            this.bombExpiresAt = null; // Clear the timer
+        }
     }
 
     receiveGarbage(lines, effect) {

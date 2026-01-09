@@ -11,6 +11,11 @@ export class FirebaseHandler {
         this.userId = userId;
         this.docRef = doc(db, "matches", this.matchId);
         this.unsubscribes = [];
+
+        // Fix: Initialize deduplication timestamps to NOW to ignore pre-existing attacks/bombs
+        this.lastProcessedAttackTime = Date.now();
+        this.lastProcessedBombTime = Date.now();
+
         console.log(`Firebase Initialized for match: ${this.matchId}, user: ${this.userId}`);
     }
 
