@@ -420,11 +420,15 @@ function startCountdown(targetStartTime) {
     matchActive = false;
     startTime = null;
 
-    // Reset Game State
-    p1 = new TetrisEngine(p1.canvas, p1.nextCanvas, p1.holdCanvas);
-    p1Battle = new BattleManager(p1, myButtonPrefix === 'p1');
-    p1Battle.onShieldUsed = () => updatePowerUpUI(); // Update UI when shield is consumed
-    p1Battle.setupBombDetonation(); // Re-register bomb detonation callback
+    // Reset Game State - only if p1 already exists (rematch scenario)
+    // For first game start, initGame already set up p1
+    if (p1 && p1.canvas) {
+        p1 = new TetrisEngine(p1.canvas, p1.nextCanvas, p1.holdCanvas);
+        p1Battle = new BattleManager(p1, myButtonPrefix === 'p1');
+        p1Battle.onShieldUsed = () => updatePowerUpUI(); // Update UI when shield is consumed
+        p1Battle.setupBombDetonation(); // Re-register bomb detonation callback
+    }
+
     score = 0; // RESET SCORE!
     document.getElementById('p1-pb').innerText = "0"; // Reset UI immediately
 
