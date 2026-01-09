@@ -313,6 +313,14 @@ export class P2PHandler {
         this.gameState[`ready_${userId}`] = null;
         this.send('ready', { userId, timestamp: null });
         console.log(`${userId} unreadied!`);
+
+        // Update local UI immediately (same as setReady)
+        if (this.callbacks.onReadyStatus) {
+            this.callbacks.onReadyStatus({
+                lifeReady: !!this.gameState.ready_Lifedelinquent,
+                chronoReady: !!this.gameState.ready_ChronoKoala
+            });
+        }
     }
 
     listenToReadyStatus(callback) {
