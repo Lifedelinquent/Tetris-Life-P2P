@@ -438,10 +438,8 @@ export class TetrisEngine {
         this.activeBombs = [];
         console.log(`Detonated ${detonatedCount} bomb blocks`);
 
-        // Apply gravity so blocks above the explosion fall down
-        if (detonatedCount > 0) {
-            this.applyGravity();
-        }
+        // NOTE: Do NOT apply gravity here - bomb explosion should NOT help the player
+        // by compacting their garbage lines. The bomb blocks just disappear.
 
         return detonatedCount > 0 ? 1 : 0; // Return 1 bomb detonation for 2 lines
     }
