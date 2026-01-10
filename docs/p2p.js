@@ -54,6 +54,9 @@ export class P2PHandler {
         this.userId = 'Lifedelinquent'; // Host is always Lifedelinquent
         this.opponentId = 'ChronoKoala';
 
+        // Reload stats now that we know we're the host
+        this.stats = this.loadStats();
+
         // Prefix room code to avoid collisions on PeerJS cloud
         const peerId = `tetris-life-${this.roomCode}`;
 
@@ -96,6 +99,9 @@ export class P2PHandler {
         this.roomCode = roomCode.toUpperCase();
         this.userId = 'ChronoKoala'; // Guest is always ChronoKoala
         this.opponentId = 'Lifedelinquent';
+
+        // Reload stats now that we know we're the guest
+        this.stats = this.loadStats();
 
         const peerId = `tetris-life-${this.roomCode}-guest-${Date.now()}`;
         const hostId = `tetris-life-${this.roomCode}`;

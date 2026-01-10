@@ -1141,46 +1141,15 @@ function updateOpponentRecord(opponentStats) {
 
 // Setup P2P ready system after connection
 function setupP2PReadySystem() {
-    // Update connection status indicators
-    const p1Connection = document.getElementById('lobby-p1-connection');
-    const p2Connection = document.getElementById('lobby-p2-connection');
-
-    if (fb.isHost) {
-        // I'm host (Life) - I'm connected, waiting for guest (Chrono)
-        if (p1Connection) {
-            p1Connection.innerText = '✓ Connected';
-            p1Connection.style.color = '#0DFF72';
-        }
-        if (p2Connection) {
-            p2Connection.innerText = '⏳ Waiting...';
-            p2Connection.style.color = '#FFD700';
-        }
-    } else {
-        // I'm guest (Chrono) - both are connected since I just joined
-        if (p1Connection) {
-            p1Connection.innerText = '✓ Connected';
-            p1Connection.style.color = '#0DFF72';
-        }
-        if (p2Connection) {
-            p2Connection.innerText = '✓ Connected';
-            p2Connection.style.color = '#F538FF';
-        }
-    }
-
     // Update lobby records display for my stats
     updateLobbyRecords();
 
     // Send my stats to opponent
     fb.sendStats();
 
-    // Listen for opponent stats (this also confirms opponent is connected)
+    // Listen for opponent stats
     fb.listenToOpponentStats((opponentStats) => {
         updateOpponentRecord(opponentStats);
-        // Update opponent connection status when we receive their stats
-        if (fb.isHost && p2Connection) {
-            p2Connection.innerText = '✓ Connected';
-            p2Connection.style.color = '#F538FF';
-        }
     });
 
     // Listen for ready status
