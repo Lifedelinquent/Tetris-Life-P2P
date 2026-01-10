@@ -361,6 +361,10 @@ async function initGame(userId) {
                         if (p.game_over === true) {
                             console.log("Opponent sent game_over signal!");
                             if (matchActive) {
+                                // Record the win locally
+                                if (fb && fb.recordWin) {
+                                    fb.recordWin();
+                                }
                                 handleGameOver(false);
                                 showResultScreen("WIN");
                             }
@@ -648,6 +652,10 @@ function handleGameOver(toppedOut) {
     let result = "DRAW";
     if (toppedOut) {
         result = "LOSE";
+        // Record the loss locally
+        if (fb && fb.recordLoss) {
+            fb.recordLoss();
+        }
         // Notify Opponent I lost? 
         // Opponent needs to know to show "WIN".
         // simple way: set KO to Opponent locally?
@@ -1092,8 +1100,26 @@ document.getElementById('room-code-input').addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
 });
 
+// Update lobby records display from localStorage
+function updateLobbyRecords() {
+    const records = P2PHandler.getPlayerRecords();
+
+    const p1RecordEl = document.getElementById('lobby-p1-record');
+    const p2RecordEl = document.getElementById('lobby-p2-record');
+
+    if (p1RecordEl) {
+        p1RecordEl.innerText = `${records.life.wins}W - ${records.life.losses}L`;
+    }
+    if (p2RecordEl) {
+        p2RecordEl.innerText = `${records.chrono.wins}W - ${records.chrono.losses}L`;
+    }
+}
+
 // Setup P2P ready system after connection
 function setupP2PReadySystem() {
+    // Update lobby records display
+    updateLobbyRecords();
+
     // Listen for ready status
     fb.listenToReadyStatus(({ lifeReady, chronoReady }) => {
         const p1Indicator = document.getElementById('p1-ready-indicator');

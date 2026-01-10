@@ -463,10 +463,13 @@ export class P2PHandler {
     }
 
     // --- Stats Persistence (localStorage) ---
+    // Stats are saved per-player so each browser tracks both players' records
 
     loadStats() {
         try {
-            const saved = localStorage.getItem('tetris_life_stats');
+            // Load stats for the current player (based on whether host or guest)
+            const key = this.isHost ? 'tetris_life_stats_life' : 'tetris_life_stats_chrono';
+            const saved = localStorage.getItem(key);
             if (saved) {
                 return JSON.parse(saved);
             }
@@ -478,10 +481,47 @@ export class P2PHandler {
 
     saveStats() {
         try {
-            localStorage.setItem('tetris_life_stats', JSON.stringify(this.stats));
+            const key = this.isHost ? 'tetris_life_stats_life' : 'tetris_life_stats_chrono';
+            localStorage.setItem(key, JSON.stringify(this.stats));
         } catch (e) {
             console.warn('Could not save stats:', e);
         }
+    }
+
+    async recordLoss() {
+        this.stats.losses++;
+        this.saveStats();
+    }
+
+    /**
+     * Get win/loss records for both players (for lobby display)
+     * @returns {{ life: {wins: number, losses: number}, chrono: {wins: number, losses: number} }}
+     */
+    static getPlayerRecords() {
+        let lifeStats = { wins: 0, losses: 0 };
+        let chronoStats = { wins: 0, losses: 0 };
+
+        try {
+            const lifeSaved = localStorage.getItem('tetris_life_stats_life');
+            if (lifeSaved) {
+                const parsed = JSON.parse(lifeSaved);
+                lifeStats = { wins: parsed.wins || 0, losses: parsed.losses || 0 };
+            }
+        } catch (e) {
+            console.warn('Could not load Life stats:', e);
+        }
+
+        try {
+            const chronoSaved = localStorage.getItem('tetris_life_stats_chrono');
+            if (chronoSaved) {
+                const parsed = JSON.parse(chronoSaved);
+                chronoStats = { wins: parsed.wins || 0, losses: parsed.losses || 0 };
+            }
+        } catch (e) {
+            console.warn('Could not load Chrono stats:', e);
+        }
+
+        return { life: lifeStats, chrono: chronoStats };
     }
 
     // --- Cleanup ---
