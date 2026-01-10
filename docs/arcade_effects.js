@@ -229,7 +229,7 @@ export class ArcadeManager {
 
         // BGM Gain
         this.bgmGain = this.audioCtx.createGain();
-        this.bgmGain.gain.value = 0.5; // Default Music Level
+        this.bgmGain.gain.value = 0.2; // Default Music Level (20%)
         this.bgmGain.connect(this.masterGain);
 
         // SFX Gain
@@ -389,7 +389,20 @@ export class ArcadeManager {
 
     resumeGame() {
         if (this.audioCtx && this.audioCtx.state === 'suspended') {
-            this.audioCtx.resume();
+            this.audioCtx.resume().then(() => {
+                console.log('Audio context resumed after pause');
+            }).catch(e => console.warn('Audio context resume failed:', e));
+        }
+
+        // Resume MP3 audio element for battle music (handles long pauses)
+        if (this.battleMusicActive && this.audioElement) {
+            // If paused, resume playback
+            if (this.audioElement.paused && this.musicOn) {
+                this.audioElement.play().catch(e => {
+                    console.warn('Resume MP3 failed, starting new track:', e);
+                    this.playRandomTrack();
+                });
+            }
         }
 
         // Resume Transition Timer
@@ -631,7 +644,7 @@ export class ArcadeManager {
         }
 
         // Set volume to match current music volume setting
-        this.gameOverAudio.volume = this.musicVolume || 0.4;
+        this.gameOverAudio.volume = this.musicVolume || 0.2;
         this.gameOverAudio.currentTime = 0; // Reset to start
 
         // Play game over music
@@ -677,8 +690,8 @@ export class ArcadeManager {
 
         // Play and fade in
         this.audioElement.play().then(() => {
-            // Use current volume setting or default to 0.4
-            const targetVol = (typeof this.musicVolume !== 'undefined') ? this.musicVolume : 0.4;
+            // Use current volume setting or default to 0.2 (20%)
+            const targetVol = (typeof this.musicVolume !== 'undefined') ? this.musicVolume : 0.2;
             this.fadeIn(targetVol);
             console.log('Now playing:', trackPath);
         }).catch(err => {
