@@ -392,20 +392,32 @@ export class TetrisEngine {
     }
 
     checkBombsCleared(clearedRows) {
-        // Remove bombs that were in cleared rows
+        // Check if ANY bomb blocks were in cleared rows
         const initialCount = this.activeBombs.length;
-        this.activeBombs = this.activeBombs.filter(bomb => {
-            // After rows are cleared, bomb positions shift down
-            // Check if bomb was in any of the cleared rows
-            return !clearedRows.includes(bomb.y);
-        });
+        const bombsInClearedRows = this.activeBombs.filter(bomb =>
+            clearedRows.includes(bomb.y)
+        );
 
-        const bombsDefused = initialCount - this.activeBombs.length;
-        if (bombsDefused > 0) {
-            console.log(`${bombsDefused} bomb(s) defused!`);
-            return true; // At least one bomb was defused
+        if (bombsInClearedRows.length > 0) {
+            // If ANY part of the bomb is cleared, FULLY defuse the entire bomb
+            // This is more intuitive and rewards quick play
+            console.log(`Bomb defused! Cleared ${bombsInClearedRows.length} of ${initialCount} bomb blocks`);
+
+            // Remove ALL remaining bomb blocks from the grid
+            for (let y = 0; y < this.grid.length; y++) {
+                for (let x = 0; x < this.grid[y].length; x++) {
+                    if (this.grid[y][x] === 'BOMB') {
+                        this.grid[y][x] = 0; // Clear the bomb block
+                    }
+                }
+            }
+
+            // Clear all bomb tracking
+            this.activeBombs = [];
+            return true; // Bomb fully defused
         }
-        return false;
+
+        return false; // No bombs cleared
     }
 
     updateBombPositions(clearedRows) {

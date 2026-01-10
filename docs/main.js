@@ -511,6 +511,12 @@ function handleLock(result) {
         if (p1Battle.onLineClear(result.linesCleared)) {
             updatePowerUpUI();
         }
+
+        // If bomb was defused, clear the bomb timer
+        if (result.bombDefused && p1Battle) {
+            p1Battle.bombExpiresAt = null;
+            console.log('Bomb defused - timer cleared!');
+        }
     } else {
         arcade.playLand();
     }
