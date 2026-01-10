@@ -1158,6 +1158,19 @@ function setupP2PReadySystem() {
         updateOpponentRecord(opponentStats);
     });
 
+    // Setup reset stats button
+    const resetBtn = document.getElementById('reset-stats-btn');
+    if (resetBtn) {
+        resetBtn.onclick = () => {
+            if (confirm('Reset your win/loss record to 0-0?')) {
+                fb.resetStats();
+                updateLobbyRecords();
+                // Re-send updated stats to opponent
+                fb.sendStats();
+            }
+        };
+    }
+
     // Listen for ready status
     fb.listenToReadyStatus(({ lifeReady, chronoReady }) => {
         const p1Indicator = document.getElementById('p1-ready-indicator');

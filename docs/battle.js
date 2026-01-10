@@ -262,8 +262,8 @@ export class BattleManager {
         // T-Spin Bonus (always sends garbage even for 1 line)
         if (isTSpin) linesToSend += 2;
 
-        // Combo bonus (every 3 combos = +1 line)
-        linesToSend += Math.floor(this.combo / 3);
+        // New Combo Bonus System: 2x=1, 3x=2, 4x=4, 5x+=5
+        linesToSend += this.getComboBonus();
 
         // Back-to-Back bonus for Tetrises and T-Spins
         if (linesCleared === 4 || isTSpin) {
@@ -273,6 +273,17 @@ export class BattleManager {
             this.backToBack = false;
         }
         return linesToSend;
+    }
+
+    // Get combo bonus lines based on current combo count
+    getComboBonus() {
+        // 1x = no bonus (first line clear)
+        // 2x = 1 line, 3x = 2 lines, 4x = 4 lines, 5x+ = 5 lines
+        if (this.combo <= 1) return 0;
+        if (this.combo === 2) return 1;
+        if (this.combo === 3) return 2;
+        if (this.combo === 4) return 4;
+        return 5; // 5x and beyond
     }
 
     updateComboUI() {

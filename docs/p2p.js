@@ -538,6 +538,16 @@ export class P2PHandler {
     }
 
     /**
+     * Reset win/loss stats to 0-0
+     */
+    resetStats() {
+        this.stats.wins = 0;
+        this.stats.losses = 0;
+        this.saveStats();
+        console.log('Stats reset to 0-0');
+    }
+
+    /**
      * Get win/loss records for both players (for lobby display)
      * @returns {{ life: {wins: number, losses: number}, chrono: {wins: number, losses: number} }}
      */
