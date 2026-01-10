@@ -15,6 +15,7 @@ export class P2PHandler {
         this.callbacks = {};
         this.gameState = {};
         this.connected = false;
+        this.opponentStats = null; // Opponent's win/loss record received via P2P
 
         // Deduplication timestamps (same as Firebase version)
         this.lastProcessedAttackTime = Date.now();
@@ -180,6 +181,9 @@ export class P2PHandler {
                 break;
             case 'online':
                 this.handleOnline(payload);
+                break;
+            case 'stats':
+                this.handleStats(payload);
                 break;
         }
     }
@@ -362,6 +366,40 @@ export class P2PHandler {
 
     handleOnline(payload) {
         if (this.callbacks.onOnline) this.callbacks.onOnline(true);
+    }
+
+    /**
+     * Send our stats to the opponent for lobby display
+     */
+    sendStats() {
+        this.send('stats', {
+            wins: this.stats.wins || 0,
+            losses: this.stats.losses || 0
+        });
+    }
+
+    /**
+     * Handle receiving opponent's stats
+     */
+    handleStats(payload) {
+        this.opponentStats = {
+            wins: payload.wins || 0,
+            losses: payload.losses || 0
+        };
+        console.log('Received opponent stats:', this.opponentStats);
+        if (this.callbacks.onOpponentStats) {
+            this.callbacks.onOpponentStats(this.opponentStats);
+        }
+    }
+
+    /**
+     * Listen for opponent stats
+     */
+    listenToOpponentStats(callback) {
+        this.callbacks.onOpponentStats = callback;
+        // If we already have opponent stats, fire immediately
+        if (this.opponentStats) callback(this.opponentStats);
+        return () => { this.callbacks.onOpponentStats = null; };
     }
 
     async triggerMatchStart() {

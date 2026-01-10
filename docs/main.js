@@ -1100,25 +1100,88 @@ document.getElementById('room-code-input').addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
 });
 
-// Update lobby records display from localStorage
+// Update lobby records display - shows own stats from localStorage, opponent stats from P2P
 function updateLobbyRecords() {
-    const records = P2PHandler.getPlayerRecords();
+    const myStats = fb.stats;
 
     const p1RecordEl = document.getElementById('lobby-p1-record');
     const p2RecordEl = document.getElementById('lobby-p2-record');
 
-    if (p1RecordEl) {
-        p1RecordEl.innerText = `${records.life.wins}W - ${records.life.losses}L`;
+    // Display my stats on my side
+    if (fb.isHost) {
+        // I'm Lifedelinquent (host), show my stats on P1 side
+        if (p1RecordEl) {
+            p1RecordEl.innerText = `${myStats.wins || 0}W - ${myStats.losses || 0}L`;
+        }
+    } else {
+        // I'm ChronoKoala (guest), show my stats on P2 side
+        if (p2RecordEl) {
+            p2RecordEl.innerText = `${myStats.wins || 0}W - ${myStats.losses || 0}L`;
+        }
     }
-    if (p2RecordEl) {
-        p2RecordEl.innerText = `${records.chrono.wins}W - ${records.chrono.losses}L`;
+}
+
+// Update opponent's record display when we receive their stats
+function updateOpponentRecord(opponentStats) {
+    const p1RecordEl = document.getElementById('lobby-p1-record');
+    const p2RecordEl = document.getElementById('lobby-p2-record');
+
+    if (fb.isHost) {
+        // I'm host (Life), opponent is Chrono (P2 side)
+        if (p2RecordEl) {
+            p2RecordEl.innerText = `${opponentStats.wins}W - ${opponentStats.losses}L`;
+        }
+    } else {
+        // I'm guest (Chrono), opponent is Life (P1 side)
+        if (p1RecordEl) {
+            p1RecordEl.innerText = `${opponentStats.wins}W - ${opponentStats.losses}L`;
+        }
     }
 }
 
 // Setup P2P ready system after connection
 function setupP2PReadySystem() {
-    // Update lobby records display
+    // Update connection status indicators
+    const p1Connection = document.getElementById('lobby-p1-connection');
+    const p2Connection = document.getElementById('lobby-p2-connection');
+
+    if (fb.isHost) {
+        // I'm host (Life) - I'm connected, waiting for guest (Chrono)
+        if (p1Connection) {
+            p1Connection.innerText = '✓ Connected';
+            p1Connection.style.color = '#0DFF72';
+        }
+        if (p2Connection) {
+            p2Connection.innerText = '⏳ Waiting...';
+            p2Connection.style.color = '#FFD700';
+        }
+    } else {
+        // I'm guest (Chrono) - both are connected since I just joined
+        if (p1Connection) {
+            p1Connection.innerText = '✓ Connected';
+            p1Connection.style.color = '#0DFF72';
+        }
+        if (p2Connection) {
+            p2Connection.innerText = '✓ Connected';
+            p2Connection.style.color = '#F538FF';
+        }
+    }
+
+    // Update lobby records display for my stats
     updateLobbyRecords();
+
+    // Send my stats to opponent
+    fb.sendStats();
+
+    // Listen for opponent stats (this also confirms opponent is connected)
+    fb.listenToOpponentStats((opponentStats) => {
+        updateOpponentRecord(opponentStats);
+        // Update opponent connection status when we receive their stats
+        if (fb.isHost && p2Connection) {
+            p2Connection.innerText = '✓ Connected';
+            p2Connection.style.color = '#F538FF';
+        }
+    });
 
     // Listen for ready status
     fb.listenToReadyStatus(({ lifeReady, chronoReady }) => {
