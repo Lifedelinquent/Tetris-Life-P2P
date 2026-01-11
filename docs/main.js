@@ -159,6 +159,7 @@ let isPaused = false;
 let pauseStartTime = 0;
 
 let gameInitialized = false;
+let resultRecorded = false; // Prevent duplicate win/loss recording
 
 async function initGame(userId) {
     if (gameInitialized) return;
@@ -360,7 +361,8 @@ async function initGame(userId) {
                         // Only trigger win if explicitly game_over === true (not just truthy/undefined)
                         if (p.game_over === true) {
                             console.log("Opponent sent game_over signal!");
-                            if (matchActive) {
+                            if (matchActive && !resultRecorded) {
+                                resultRecorded = true; // Prevent double recording
                                 // Record the win locally
                                 if (fb && fb.recordWin) {
                                     fb.recordWin();
@@ -423,6 +425,7 @@ function startCountdown(targetStartTime) {
     // Force Interrupt: Stop any running game loop logic
     matchActive = false;
     startTime = null;
+    resultRecorded = false; // Reset for new match
 
     // Reset Game State - only if p1 already exists (rematch scenario)
     // For first game start, initGame already set up p1
@@ -656,7 +659,8 @@ function handleGameOver(toppedOut) {
     // User Request: "when one player... gets to top he loses so KO goto other player"
 
     let result = "DRAW";
-    if (toppedOut) {
+    if (toppedOut && !resultRecorded) {
+        resultRecorded = true; // Prevent double recording
         result = "LOSE";
         // Record the loss locally
         if (fb && fb.recordLoss) {
