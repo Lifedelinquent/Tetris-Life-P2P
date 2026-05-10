@@ -330,39 +330,63 @@ export class ArcadeManager {
         }
     }
 
+    // --- Music subsystem ---
+    //
+    // Single source of truth for "should music be playing?":
+    //   this.musicOn          - user preference (persisted by main.js).
+    //   this.battleMusicActive - which mode we're in (false = lobby/synth,
+    //                            true = battle/MP3). NEVER toggled by the
+    //                            on/off state - only by lifecycle transitions.
+    //
+    // Every API method either flips musicOn OR transitions modes (not both),
+    // and `_playCurrent()` is the single place that actually starts audio.
+
+    _stopSynth() {
+        clearTimeout(this.timerID);
+        this.isPlayingMusic = false;
+    }
+
+    _pauseMp3() {
+        if (this.audioElement) {
+            try { this.audioElement.pause(); } catch (e) { /* not yet loaded */ }
+        }
+    }
+
+    // Plays the music appropriate to the current mode, but only if
+    // musicOn is true. Safe to call any number of times.
+    _playCurrent() {
+        if (!this.musicOn || !this.audioCtx) return;
+
+        if (this.battleMusicActive) {
+            // Battle mode: resume MP3 if we have one paused, else start fresh.
+            if (this.audioElement && this.audioElement.src && this.audioElement.paused) {
+                this.audioElement.play().catch(() => this.playRandomTrack());
+            } else if (!this.audioElement || !this.audioElement.src) {
+                this.playRandomTrack();
+            }
+        } else {
+            // Lobby mode: synthesized melody.
+            if (!this.isPlayingMusic) {
+                this.isPlayingMusic = true;
+                const now = this.audioCtx.currentTime + 0.1;
+                this.currentNoteIndex = 0;
+                this.nextNoteTime = now;
+                this.nextDrumTime = now;
+                this.drumBeat = 0;
+                this.scheduler();
+            }
+        }
+    }
+
+    // Flips the on/off preference and applies it. Returns the new state.
     toggleMusic() {
         this.resumeAudio();
-
-        // Use musicOn to track if anything is playing
+        this.musicOn = !this.musicOn;
         if (this.musicOn) {
-            // MUTE - pause whatever is playing but remember battle mode
-            if (this.audioElement) {
-                this.audioElement.pause();
-            }
-            // Stop synth music scheduling
-            clearTimeout(this.timerID);
-            this.isPlayingMusic = false;
-            this.musicOn = false;
-            // DON'T reset battleMusicActive - we need to remember we're in battle
+            this._playCurrent();
         } else {
-            // UNMUTE - resume appropriate music type
-            this.musicOn = true;
-
-            // Check if we're in battle mode (battleMusicActive was set by startBattleMusic)
-            if (this.battleMusicActive) {
-                // Resume MP3 from where it was paused
-                if (this.audioElement && this.audioElement.src) {
-                    this.audioElement.play().catch(() => {
-                        this.playRandomTrack();
-                    });
-                } else {
-                    this.playRandomTrack();
-                }
-            } else {
-                // Lobby mode - synthesized music
-                this.playTestBeep();
-                this.startMusic();
-            }
+            this._stopSynth();
+            this._pauseMp3();
         }
         return this.musicOn;
     }
@@ -415,71 +439,55 @@ export class ArcadeManager {
         osc.stop(this.audioCtx.currentTime + 0.3);
     }
 
-    // --- Lobby Music (Synthesized) ---
+    // Switch to lobby mode (synthesized melody). Plays only if musicOn.
     startMusic() {
-        // For lobby - uses synthesized music
-        if (this.isPlayingMusic) return;
-        this.isPlayingMusic = true;
-        this.musicOn = true;
-        this.currentNoteIndex = 0;
-        const now = this.audioCtx.currentTime + 0.1;
-        this.nextNoteTime = now;
-        this.nextDrumTime = now;
-        this.drumBeat = 0;
-        this.scheduler();
+        this.battleMusicActive = false;
+        this._pauseMp3();
+        this._playCurrent();
     }
 
+    // Pause all audio without changing the user's on/off preference.
+    // Use this for explicit "be quiet now" moments (pause, etc.).
     stopMusic() {
-        this.musicOn = false;
-        this.isPlayingMusic = false;
-        clearTimeout(this.timerID);
-
-        // Stop MP3 if playing
-        if (this.audioElement) {
-            this.fadeOut(() => {
-                if (this.audioElement) this.audioElement.pause();
-            });
-        }
+        this._stopSynth();
+        this._pauseMp3();
     }
 
-    // --- Battle Music (MP3 Playlist at 40% volume) ---
+    // Switch to battle mode (MP3 playlist). Plays only if musicOn.
     startBattleMusic() {
-        // Stop lobby music first
-        this.stopMusic();
-
-        // Start MP3 playlist for battle
-        this.musicOn = true;
         this.battleMusicActive = true;
-        this.playRandomTrack();
+        this._stopSynth();
+        this._playCurrent();
     }
 
+    // Transition back to lobby mode (but don't auto-start - the game-over
+    // flow does its own MP3 sting and then resumes lobby music itself).
     stopBattleMusic() {
         this.battleMusicActive = false;
-        this.stopMusic();
+        this._pauseMp3();
     }
 
-    // --- Game Over Music ---
+    // Plays the game-over sting (if music is on), then transitions back to
+    // lobby mode. If music is off, just transitions silently.
     playGameOverMusic() {
-        // Stop any current music immediately
-        this.stopBattleMusic();
+        this.stopBattleMusic(); // mode -> lobby, MP3 paused
 
-        // Create game over audio element if not exists
         if (!this.gameOverAudio) {
             this.gameOverAudio = new Audio('music/46. Game Over BGM [Tetris Gameboy Theme].mp3');
             this.gameOverAudio.addEventListener('ended', () => {
-                // Start synthesized lobby music after game over music ends
-                this.startMusic();
+                // After the sting ends, kick lobby music. _playCurrent
+                // respects musicOn so this is a no-op if the player muted.
+                this._playCurrent();
             });
         }
-
-        // Set volume to match current music volume setting
         this.gameOverAudio.volume = this.musicVolume || 0.2;
-        this.gameOverAudio.currentTime = 0; // Reset to start
+        this.gameOverAudio.currentTime = 0;
 
-        // Play game over music; on failure fall straight back to lobby music
-        this.gameOverAudio.play().catch(() => {
-            this.startMusic();
-        });
+        if (this.musicOn) {
+            this.gameOverAudio.play().catch(() => this._playCurrent());
+        }
+        // If music is off, the lobby will already be silent and the next
+        // toggle from the user will start the lobby synth.
     }
 
     stopGameOverMusic() {

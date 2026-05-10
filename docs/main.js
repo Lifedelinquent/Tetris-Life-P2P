@@ -95,6 +95,15 @@ function gameLoop() {
 window.arcade = arcade; // Expose for debugging
 
 
+// Push the music on/off state into both toggle buttons so they always
+// show the same thing regardless of which one was clicked last.
+function _syncMusicButtons(isOn) {
+    const lobby = document.getElementById('music-toggle');
+    if (lobby) lobby.innerText = isOn ? '🎵 MUSIC: ON' : '🎵 MUSIC: OFF';
+    const inGame = document.getElementById('ingame-music-toggle');
+    if (inGame) inGame.innerText = isOn ? '🔊' : '🔇';
+}
+
 window.addEventListener('load', () => {
     try {
         // Auto-init audio on first user interaction (no click-to-start screen)
@@ -107,17 +116,20 @@ window.addEventListener('load', () => {
             }
         }, { once: false }); // Keep listening but only init once
 
-        // Music toggle button functionality
+        // Apply the persisted musicOn preference so the engine matches
+        // the user's last choice across reloads.
+        arcade.musicOn = settings.musicOn;
+        _syncMusicButtons(settings.musicOn);
+
+        // Music toggle button functionality - both the lobby button and the
+        // in-game button drive the same `arcade.toggleMusic()` so they share
+        // a single source of truth and stay visually in sync.
         const musicBtn = document.getElementById('music-toggle');
         if (musicBtn) {
             musicBtn.addEventListener('click', () => {
-                if (arcade.musicOn) {
-                    arcade.stopMusic();
-                    musicBtn.innerText = "🎵 MUSIC: OFF";
-                } else {
-                    arcade.startMusic();
-                    musicBtn.innerText = "🎵 MUSIC: ON";
-                }
+                const isOn = arcade.toggleMusic();
+                setSetting('musicOn', isOn);
+                _syncMusicButtons(isOn);
             });
         }
 
@@ -142,15 +154,16 @@ window.addEventListener('load', () => {
             });
         }
 
-        // Music Toggle (In-Game)
+        // In-game music toggle uses the same shared state as the lobby button.
         const inGameMusicBtn = document.getElementById('ingame-music-toggle');
         if (inGameMusicBtn) {
             inGameMusicBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent event bubbling
-                const isPlaying = arcade.toggleMusic();
-                inGameMusicBtn.innerText = isPlaying ? "🔊" : "🔇";
-                if (isPlaying) arcade.playClickSound();
-                inGameMusicBtn.blur(); // Remove focus so spacebar doesn't trigger it
+                e.stopPropagation();
+                const isOn = arcade.toggleMusic();
+                setSetting('musicOn', isOn);
+                _syncMusicButtons(isOn);
+                if (isOn) arcade.playClickSound();
+                inGameMusicBtn.blur();
             });
         }
 
@@ -677,16 +690,19 @@ function handleLock(result, isTSpin = false) {
 
     const attackLines = p1Battle.counterAttack(rawAttack);
 
-    // Send attack to opponent
-    if (attackLines > 0 && fb.userId !== "Solo") {
-        const opponentId = fb.userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
-        fb.sendAttack(opponentId, attackLines);
-
-        // Track lines sent and update UI
+    // Track outgoing attack regardless of mode so the end-of-match stats
+    // card (and APM) is meaningful even in Solo. Sending to the opponent
+    // is the only network-specific step.
+    if (attackLines > 0) {
         p1Battle.linesSent += attackLines;
-        const mySentId = fb.userId === "Lifedelinquent" ? 'p1-lines-sent' : 'p2-lines-sent';
+        const mySentId = myButtonPrefix === 'p1' ? 'p1-lines-sent' : 'p2-lines-sent';
         const sentEl = document.getElementById(mySentId);
         if (sentEl) sentEl.innerText = p1Battle.linesSent;
+
+        if (fb.userId !== "Solo") {
+            const opponentId = fb.userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
+            fb.sendAttack(opponentId, attackLines);
+        }
     }
     // DoT system handles garbage application automatically via timer
 

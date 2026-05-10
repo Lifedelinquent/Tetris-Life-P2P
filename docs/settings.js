@@ -11,6 +11,7 @@ const DEFAULTS = {
     // Audio (initialized from older standalone keys for back-compat).
     musicVol: 0.2,
     sfxVol: 0.5,
+    musicOn: false,    // user preference for whether music plays at all
 
     // Input feel - all milliseconds.
     dasMs:        cfg.DAS_MS,
