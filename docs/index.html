@@ -18,12 +18,86 @@
     <canvas id="effects-canvas"
         style="position: fixed; top: 0; left: 0; pointer-events: none; z-index: 10; background: transparent;"></canvas>
 
+    <!-- Full-screen flash for Tetris / T-Spin punctuation -->
+    <div id="flash-overlay"></div>
+
+    <!-- Settings modal (lazy-shown). Backdrop click + ESC + close button all dismiss. -->
+    <div id="settings-modal" class="settings-modal hidden">
+        <div class="settings-backdrop"></div>
+        <div class="settings-card">
+            <div class="settings-header">
+                <h2>SETTINGS</h2>
+                <button id="settings-close" class="settings-close" aria-label="Close">✖</button>
+            </div>
+
+            <div class="settings-section">
+                <h3>AUDIO</h3>
+                <label class="settings-row">
+                    <span>Music</span>
+                    <input type="range" id="set-music-vol" min="0" max="1" step="0.05">
+                    <span class="settings-num" id="set-music-vol-out">0.20</span>
+                </label>
+                <label class="settings-row">
+                    <span>SFX</span>
+                    <input type="range" id="set-sfx-vol" min="0" max="1" step="0.05">
+                    <span class="settings-num" id="set-sfx-vol-out">0.50</span>
+                </label>
+            </div>
+
+            <div class="settings-section">
+                <h3>INPUT FEEL</h3>
+                <label class="settings-row">
+                    <span>DAS <em>(delay before auto-repeat)</em></span>
+                    <input type="range" id="set-das" min="50" max="300" step="10">
+                    <span class="settings-num" id="set-das-out">150ms</span>
+                </label>
+                <label class="settings-row">
+                    <span>ARR <em>(horizontal repeat rate)</em></span>
+                    <input type="range" id="set-arr" min="0" max="100" step="5">
+                    <span class="settings-num" id="set-arr-out">30ms</span>
+                </label>
+                <label class="settings-row">
+                    <span>Soft Drop Rate</span>
+                    <input type="range" id="set-soft" min="0" max="100" step="5">
+                    <span class="settings-num" id="set-soft-out">30ms</span>
+                </label>
+                <label class="settings-row">
+                    <span>Lock Delay</span>
+                    <input type="range" id="set-lock" min="100" max="800" step="50">
+                    <span class="settings-num" id="set-lock-out">500ms</span>
+                </label>
+            </div>
+
+            <div class="settings-section">
+                <h3>VISUAL</h3>
+                <label class="settings-row settings-row-toggle">
+                    <span>Ghost Piece</span>
+                    <input type="checkbox" id="set-ghost">
+                </label>
+                <label class="settings-row settings-row-toggle">
+                    <span>CRT Scanlines</span>
+                    <input type="checkbox" id="set-scanlines">
+                </label>
+            </div>
+
+            <div class="settings-footer">
+                <button id="settings-reset" class="arcade-btn-mini">RESET TO DEFAULTS</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating gear button - visible on lobby + in-game -->
+    <button id="open-settings-btn" class="settings-gear" aria-label="Settings">⚙</button>
+
+    <!-- CRT scanlines + vignette - sits above gameplay, below modals -->
+    <div id="crt-overlay"></div>
+
     <!-- P2P Connection Screen (First Screen) -->
     <div id="p2p-screen" class="overlay">
         <div style="position: absolute; top: 20px; right: 20px;">
             <button id="music-toggle" class="arcade-btn-small">🎵 MUSIC: OFF</button>
         </div>
-        <h1 class="neon-title">TetrisLife Battle</h1>
+        <h1 class="neon-title lobby-title">TetrisLife Battle</h1>
         <h2 style="color: #aaa; margin-bottom: 30px; font-size: 1rem;">P2P Edition - No Limits!</h2>
 
         <!-- Connection Options -->
@@ -109,65 +183,13 @@
             </button>
             <p style="color: #666; font-size: 0.7rem; margin-top: 15px;">Game starts when both players are ready</p>
         </div>
-    </div>
 
-    <!-- Old Login screen - keeping for rules reference, hidden by default now -->
-    <div id="login-screen" class="overlay hidden">
-        <div style="position: absolute; top: 20px; right: 20px;">
-            <button id="music-toggle-old" class="arcade-btn-small">🎵 MUSIC: OFF</button>
-        </div>
-        <h1 class="neon-title">TetrisLife Battle:<br>
-            <img id="lobby-life-avatar" src="avatars/brianangry.png" alt="Lifedelinquent"
-                class="lobby-avatar">Lifedelinquent
-            V
-            Chronokoala<img id="lobby-chrono-avatar" src="avatars/fernandomad.png" alt="ChronoKoala"
-                class="lobby-avatar">
-        </h1>
-
-        <div class="rules-container">
-            <h3 style="color: #fff; margin-bottom: 15px; text-decoration: underline;">HOW TO PLAY</h3>
-
-            <div class="rule-item">
-                <span class="icon">🎮</span>
-                <span>
-                    <li><strong>Controls:</strong> Arrow Keys to Move/Rotate. Space to Drop.</li>
-                    <li><strong>Hold:</strong> Press 'C' or 'Shift' to swap held piece.</li>
-                    <li><strong>Pause:</strong> Press 'P' or 'Esc' to pause/unpause the game.</li>
-                    <li><strong>Powerups:</strong> Spend cleared lines to use powerups! [S] [R] [E] keys.</li>
-                </span>
+        <!-- Bottom marquee - lobby only -->
+        <div class="lobby-marquee">
+            <div class="lobby-marquee-track">
+                ★&nbsp;&nbsp;INSERT&nbsp;COIN&nbsp;&nbsp;★&nbsp;&nbsp;TETRIS&nbsp;LIFE&nbsp;BATTLE&nbsp;&nbsp;★&nbsp;&nbsp;P2P&nbsp;EDITION&nbsp;&nbsp;★&nbsp;&nbsp;CHALLENGE&nbsp;A&nbsp;FRIEND&nbsp;&nbsp;★&nbsp;&nbsp;
+                ★&nbsp;&nbsp;INSERT&nbsp;COIN&nbsp;&nbsp;★&nbsp;&nbsp;TETRIS&nbsp;LIFE&nbsp;BATTLE&nbsp;&nbsp;★&nbsp;&nbsp;P2P&nbsp;EDITION&nbsp;&nbsp;★&nbsp;&nbsp;CHALLENGE&nbsp;A&nbsp;FRIEND&nbsp;&nbsp;★&nbsp;&nbsp;
             </div>
-            <div class="rule-item">
-                <span class="icon">🛡️</span>
-                <span><strong>SHIELD [S] - 3 Lines:</strong> Blocks the next incoming garbage attack completely.</span>
-            </div>
-            <div class="rule-item">
-                <span class="icon">⚡</span>
-                <span><strong>LIGHTNING [R] - 6 Lines:</strong> Instantly get 3 long I-pieces in a row!</span>
-            </div>
-            <div class="rule-item">
-                <span class="icon">💣</span>
-                <span><strong>BOMB [E] - 9 Lines:</strong> Sends a timer bomb to opponent. 10s to defuse or +2
-                    garbage!</span>
-            </div>
-            <div class="rule-item">
-                <span class="icon">🌈</span>
-                <span><strong>COLOR BUSTER [Q] - 17 Lines:</strong> Removes ALL blocks of one color from your
-                    board!</span>
-            </div>
-        </div>
-
-        <div class="user-selection">
-            <div class="player-select-row">
-                <img id="btn-life-avatar" src="avatars/briannormal.png" alt="Lifedelinquent" class="btn-avatar hidden">
-                <button id="select-lifedelinquent" class="arcade-btn">Lifedelinquent</button>
-                <span id="life-ready-status" class="ready-indicator hidden">✓ READY</span>
-            </div>
-            <div class="player-select-row">
-                <img id="btn-chrono-avatar" src="avatars/fernandohappy.png" alt="ChronoKoala" class="btn-avatar hidden">
-                <button id="select-chronokoala" class="arcade-btn">ChronoKoala</button>
-                <span id="chrono-ready-status" class="ready-indicator hidden">✓ READY</span>
-            </div>
-            <button id="start-battle-btn" class="arcade-btn start-btn" disabled>START BATTLE</button>
         </div>
     </div>
 
@@ -175,8 +197,8 @@
         <!-- Pause Overlay -->
         <div id="pause-overlay" class="overlay hidden"
             style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;">
-            <div style="font-size: 5rem; color: #fff; text-shadow: 0 0 20px cyan, 0 0 40px cyan;">PAUSED</div>
-            <div style="font-size: 1.5rem; color: #aaa; margin-top: 20px;">Press 'P' or 'Esc' to Resume</div>
+            <div id="pause-title" style="font-size: 5rem; color: #fff; text-shadow: 0 0 20px cyan, 0 0 40px cyan;">PAUSED</div>
+            <div id="pause-subtitle" style="font-size: 1.5rem; color: #aaa; margin-top: 20px;">Press 'P' or 'Esc' to Resume</div>
         </div>
         <!-- Top Bar -->
         <div class="top-bar">
@@ -212,11 +234,12 @@
                         <span>WINS: <span id="p1-lifetime-wins">0</span></span>
                         <span>SCORE: <span id="p1-pb">0</span></span>
                     </div>
-                    <div id="p1-combo-container"
-                        style="width: 100px; height: 8px; background: #333; margin: 5px auto; display: none; border: 1px solid #555;">
-                        <div id="p1-combo-fill"
-                            style="height: 100%; width: 0%; background: linear-gradient(90deg, #0DC2FF, #FF0D72); transition: width 0.2s;">
+                    <div id="p1-combo-wrap" class="combo-wrap" style="display: none;">
+                        <div id="p1-combo-label" class="combo-label">COMBO ×<span id="p1-combo-count">0</span></div>
+                        <div class="combo-track">
+                            <div id="p1-combo-fill" class="combo-fill"></div>
                         </div>
+                        <div id="p1-b2b-badge" class="b2b-badge hidden">BACK-TO-BACK</div>
                     </div>
                 </div>
 
@@ -275,7 +298,9 @@
                     </div>
 
                     <div class="main-board-container p1-border" style="position: relative;">
-                        <div class="garbage-meter" id="p1-garbage-meter"></div>
+                        <div class="garbage-meter" id="p1-garbage-meter">
+                            <div class="garbage-fill"></div>
+                        </div>
 
                         <canvas id="p1-canvas" width="480" height="800"></canvas>
                     </div>
@@ -302,11 +327,12 @@
                         <span>WINS: <span id="p2-lifetime-wins">0</span></span>
                         <span>SCORE: <span id="p2-pb">0</span></span>
                     </div>
-                    <div id="p2-combo-container"
-                        style="width: 100px; height: 8px; background: #333; margin: 5px auto; display: none; border: 1px solid #555;">
-                        <div id="p2-combo-fill"
-                            style="height: 100%; width: 0%; background: linear-gradient(90deg, #0DC2FF, #FF0D72); transition: width 0.2s;">
+                    <div id="p2-combo-wrap" class="combo-wrap" style="display: none;">
+                        <div id="p2-combo-label" class="combo-label">COMBO ×<span id="p2-combo-count">0</span></div>
+                        <div class="combo-track">
+                            <div id="p2-combo-fill" class="combo-fill"></div>
                         </div>
+                        <div id="p2-b2b-badge" class="b2b-badge hidden">BACK-TO-BACK</div>
                     </div>
                 </div>
 
@@ -365,7 +391,9 @@
                     </div>
 
                     <div class="main-board-container p2-border" style="position: relative;">
-                        <div class="garbage-meter" id="p2-garbage-meter"></div>
+                        <div class="garbage-meter" id="p2-garbage-meter">
+                            <div class="garbage-fill"></div>
+                        </div>
 
                         <canvas id="p2-canvas" width="480" height="800"></canvas>
                     </div>
@@ -389,8 +417,38 @@
     </div>
 
     <div id="game-over-screen" class="overlay hidden" style="z-index: 150;">
-        <h2 id="winner-text" class="neon-title" style="margin-bottom: 30px;"></h2>
-        <div style="display: flex; gap: 20px;">
+        <h2 id="winner-text" class="neon-title" style="margin-bottom: 20px;"></h2>
+        <div id="stats-card" class="stats-card">
+            <div class="stat-row" style="--reveal-delay: 0.05s">
+                <span class="stat-label">LINES CLEARED</span>
+                <span class="stat-value" id="stat-lines">0</span>
+            </div>
+            <div class="stat-row" style="--reveal-delay: 0.15s">
+                <span class="stat-label">TETRISES</span>
+                <span class="stat-value" id="stat-tetrises">0</span>
+            </div>
+            <div class="stat-row" style="--reveal-delay: 0.25s">
+                <span class="stat-label">MAX COMBO</span>
+                <span class="stat-value" id="stat-max-combo">0</span>
+            </div>
+            <div class="stat-row" style="--reveal-delay: 0.35s">
+                <span class="stat-label">ATTACK SENT</span>
+                <span class="stat-value" id="stat-attack">0</span>
+            </div>
+            <div class="stat-row" style="--reveal-delay: 0.45s">
+                <span class="stat-label">APM</span>
+                <span class="stat-value" id="stat-apm">0</span>
+            </div>
+            <div class="stat-row" style="--reveal-delay: 0.55s">
+                <span class="stat-label">TIME ALIVE</span>
+                <span class="stat-value" id="stat-time">0:00</span>
+            </div>
+            <div class="stat-row final-score" style="--reveal-delay: 0.7s">
+                <span class="stat-label">SCORE</span>
+                <span class="stat-value" id="stat-score">0</span>
+            </div>
+        </div>
+        <div style="display: flex; gap: 20px; margin-top: 20px;">
             <button id="restart-btn" class="arcade-btn">PLAY AGAIN</button>
             <button id="quit-btn" class="arcade-btn"
                 style="border-color: #ff3333; color: #ff3333; text-shadow: 0 0 5px #ff3333;">QUIT</button>

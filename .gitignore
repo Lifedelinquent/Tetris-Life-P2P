@@ -8,6 +8,11 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+.claude/
+
+# Defunct Firebase config (kept locally so the deploy-from-pages flow
+# isn't disturbed but never tracked)
+.firebase/
 
 # Redundant Media (Already in public/music)
 *.mp3

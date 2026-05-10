@@ -237,12 +237,6 @@ export class ArcadeManager {
         this.sfxGain.gain.value = 0.5; // Default SFX Level
         this.sfxGain.connect(this.masterGain);
 
-        // Load MP3s
-        this.introBuffer = null;
-        this.loopBuffer = null;
-        this.currentMusicSource = null;
-        this.loadGameMusic();
-
         // Fallback: Ensure Frequencies Exist
         if (!this.noteFreqs) {
             this.noteFreqs = {
@@ -286,160 +280,12 @@ export class ArcadeManager {
         this.noiseBuffer = buffer;
     }
 
-    async loadGameMusic() {
-        try {
-            // Load Intro (classic.mp3)
-            const res1 = await fetch('classic.mp3');
-            const buf1 = await res1.arrayBuffer();
-            this.introBuffer = await this.audioCtx.decodeAudioData(buf1);
-
-            // Load Loop (loop.mp3)
-            const res2 = await fetch('loop.mp3');
-            const buf2 = await res2.arrayBuffer();
-            this.loopBuffer = await this.audioCtx.decodeAudioData(buf2);
-
-            console.log("Game Music Loaded (Intro + Loop)");
-        } catch (e) {
-            console.error("Failed to load game music:", e);
-        }
-    }
-
-    playGameMusic(rate = 1.0) {
-        if (!this.audioCtx || !this.introBuffer || !this.loopBuffer) return;
-
-        this.stopGameMusic();
-        this.isMusicPlaying = true;
-        this.currentRate = rate || 1.0;
-
-        // Play Intro
-        const source = this.audioCtx.createBufferSource();
-        source.buffer = this.introBuffer;
-        source.loop = false;
-        source.playbackRate.value = this.currentRate;
-        source.connect(this.bgmGain); // Direct connect for Intro
-
-        const startTime = this.audioCtx.currentTime;
-        source.start(startTime);
-        this.currentMusicSource = source;
-        console.log(`Playing Intro at ${rate}x`);
-
-        // Schedule Loop (Crossfade: Start 200ms early)
-        const duration = this.introBuffer.duration / this.currentRate;
-        const overlap = 0.2; // 200ms
-        const delay = Math.max(0, duration - overlap) * 1000;
-
-        // Store start time for speed adjustment calcs
-        this.introStartTime = startTime;
-        this.introDuration = duration;
-        this.isIntro = true;
-
-        this.transitionTimer = setTimeout(() => {
-            if (this.isMusicPlaying) {
-                this.playMusicLoop(this.currentRate);
-            }
-        }, delay);
-    }
-
-    playMusicLoop(rate) {
-        if (!this.isMusicPlaying) return;
-
-        this.isIntro = false;
-        const source = this.audioCtx.createBufferSource();
-        source.buffer = this.loopBuffer;
-        source.loop = true;
-        source.playbackRate.value = rate;
-
-        // Crossfade Gain
-        const fadeGain = this.audioCtx.createGain();
-        fadeGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
-        fadeGain.gain.linearRampToValueAtTime(1, this.audioCtx.currentTime + 3.0); // 3s Fade In (Matched overlap)
-
-        source.connect(fadeGain);
-        fadeGain.connect(this.bgmGain);
-
-        source.start();
-        this.currentMusicSource = source;
-        console.log(`Playing Loop at ${rate}x (Fade In)`);
-    }
-
-    scheduleLoopTransition(delay) {
-        this.transitionDelay = delay;
-        this.transitionSetTime = Date.now();
-
-        clearTimeout(this.transitionTimer);
-        this.transitionTimer = setTimeout(() => {
-            if (this.isMusicPlaying) {
-                this.playMusicLoop(this.currentRate);
-            }
-        }, delay);
-    }
-
-    pauseGame() {
-        if (this.audioCtx && this.audioCtx.state === 'running') {
-            this.audioCtx.suspend();
-        }
-
-        // Freeze Transition Timer
-        if (this.isIntro && this.transitionTimer) {
-            clearTimeout(this.transitionTimer);
-            const elapsed = Date.now() - this.transitionSetTime;
-            this.transitionRemaining = Math.max(0, this.transitionDelay - elapsed);
-        }
-    }
-
-    resumeGame() {
-        if (this.audioCtx && this.audioCtx.state === 'suspended') {
-            this.audioCtx.resume().then(() => {
-                console.log('Audio context resumed after pause');
-            }).catch(e => console.warn('Audio context resume failed:', e));
-        }
-
-        // Resume MP3 audio element for battle music (handles long pauses)
-        if (this.battleMusicActive && this.audioElement) {
-            // If paused, resume playback
-            if (this.audioElement.paused && this.musicOn) {
-                this.audioElement.play().catch(e => {
-                    console.warn('Resume MP3 failed, starting new track:', e);
-                    this.playRandomTrack();
-                });
-            }
-        }
-
-        // Resume Transition Timer
-        if (this.isIntro && this.transitionRemaining > 0) {
-            this.scheduleLoopTransition(this.transitionRemaining);
-            this.transitionRemaining = 0;
-        }
-    }
-
-    stopGameMusic() {
-        this.isMusicPlaying = false;
-        clearTimeout(this.transitionTimer);
-        this.isIntro = false;
-        this.transitionRemaining = 0; // Clear state
-
-        if (this.currentMusicSource) {
-            try {
-                this.currentMusicSource.stop();
-            } catch (e) { }
-            this.currentMusicSource = null;
-        }
-    }
-
     setMusicSpeed(rate) {
         this.currentRate = rate;
-        // For MP3 playback via HTML5 Audio
+        // MP3 playback via HTML5 Audio (skip while in panic mode so we don't fight it)
         if (this.audioElement && !this.panicMode) {
-            // Don't override panic mode speed
             this.normalPlaybackRate = rate;
             this.audioElement.playbackRate = rate;
-        }
-        // Legacy Web Audio support
-        if (this.currentMusicSource && this.currentMusicSource.playbackRate) {
-            this.currentMusicSource.playbackRate.setValueAtTime(
-                rate,
-                this.audioCtx.currentTime
-            );
         }
     }
 
@@ -475,22 +321,11 @@ export class ArcadeManager {
         }
     }
 
-    setTempoScale(scale) {
-        this.tempo = this.baseTempo * scale;
-        // console.log("Music Tempo set to:", this.tempo);
-    }
-
     resumeAudio() {
         if (!this.audioCtx) return;
-
-        console.log(`Audio Context State: ${this.audioCtx.state}`);
-
         if (this.audioCtx.state === 'suspended') {
-            this.audioCtx.resume().then(() => {
-                console.log("Audio Context resumed successfully!");
-            }).catch(e => {
+            this.audioCtx.resume().catch(e => {
                 console.error("Failed to resume Audio Context:", e);
-                alert("Audio Error: Browser prevented sound. Try clicking the page again.");
             });
         }
     }
@@ -501,7 +336,6 @@ export class ArcadeManager {
         // Use musicOn to track if anything is playing
         if (this.musicOn) {
             // MUTE - pause whatever is playing but remember battle mode
-            console.log("Muting music...");
             if (this.audioElement) {
                 this.audioElement.pause();
             }
@@ -512,16 +346,13 @@ export class ArcadeManager {
             // DON'T reset battleMusicActive - we need to remember we're in battle
         } else {
             // UNMUTE - resume appropriate music type
-            console.log("Unmuting music... battleMusicActive=", this.battleMusicActive);
             this.musicOn = true;
 
             // Check if we're in battle mode (battleMusicActive was set by startBattleMusic)
             if (this.battleMusicActive) {
-                console.log("Resuming battle MP3 music...");
                 // Resume MP3 from where it was paused
                 if (this.audioElement && this.audioElement.src) {
-                    this.audioElement.play().catch(e => {
-                        console.warn("Resume failed, starting new track:", e);
+                    this.audioElement.play().catch(() => {
                         this.playRandomTrack();
                     });
                 } else {
@@ -529,7 +360,6 @@ export class ArcadeManager {
                 }
             } else {
                 // Lobby mode - synthesized music
-                console.log("Starting lobby synth music...");
                 this.playTestBeep();
                 this.startMusic();
             }
@@ -637,7 +467,6 @@ export class ArcadeManager {
         if (!this.gameOverAudio) {
             this.gameOverAudio = new Audio('music/46. Game Over BGM [Tetris Gameboy Theme].mp3');
             this.gameOverAudio.addEventListener('ended', () => {
-                console.log("Game over music ended, starting lobby music...");
                 // Start synthesized lobby music after game over music ends
                 this.startMusic();
             });
@@ -647,12 +476,8 @@ export class ArcadeManager {
         this.gameOverAudio.volume = this.musicVolume || 0.2;
         this.gameOverAudio.currentTime = 0; // Reset to start
 
-        // Play game over music
-        this.gameOverAudio.play().then(() => {
-            console.log("Playing game over music...");
-        }).catch(err => {
-            console.warn("Game over music failed:", err);
-            // Fallback: just start lobby music
+        // Play game over music; on failure fall straight back to lobby music
+        this.gameOverAudio.play().catch(() => {
             this.startMusic();
         });
     }
@@ -693,7 +518,6 @@ export class ArcadeManager {
             // Use current volume setting or default to 0.2 (20%)
             const targetVol = (typeof this.musicVolume !== 'undefined') ? this.musicVolume : 0.2;
             this.fadeIn(targetVol);
-            console.log('Now playing:', trackPath);
         }).catch(err => {
             console.warn('Music playback failed:', err);
         });
@@ -762,7 +586,6 @@ export class ArcadeManager {
             // Smooth transition of playback rate
             const targetRate = enabled ? this.panicPlaybackRate : this.normalPlaybackRate;
             this.audioElement.playbackRate = targetRate;
-            console.log('Panic mode:', enabled ? 'ON (1.35x speed)' : 'OFF (normal speed)');
         }
     }
 
@@ -1023,26 +846,172 @@ export class ArcadeManager {
         osc.stop(this.audioCtx.currentTime + 0.1);
     }
 
-    playClickSound() {
+    // --- Action SFX ---
+    // Tiny click for horizontal moves. Very quiet so DAS auto-repeat doesn't
+    // become a buzz - it should sit just under the music.
+    playMove() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
-
+        const t = this.audioCtx.currentTime;
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
-
         osc.type = 'square';
-        osc.frequency.setValueAtTime(220, this.audioCtx.currentTime);
-        osc.frequency.linearRampToValueAtTime(880, this.audioCtx.currentTime + 0.1);
-        osc.frequency.linearRampToValueAtTime(440, this.audioCtx.currentTime + 0.3);
-
-        gain.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.1, this.audioCtx.currentTime + 0.1);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.3);
-
+        osc.frequency.setValueAtTime(880, t);
+        gain.gain.setValueAtTime(0.025, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
         osc.connect(gain);
         gain.connect(this.sfxGain);
+        osc.start(t);
+        osc.stop(t + 0.04);
+    }
 
-        osc.start();
-        osc.stop(this.audioCtx.currentTime + 0.3);
+    // Beefy slam for hard drop - low square hit + lowpass thud, longer than land.
+    playHardDrop() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const t = this.audioCtx.currentTime;
+        const osc = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+        const filter = this.audioCtx.createBiquadFilter();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(400, t);
+        gain.gain.setValueAtTime(0.3, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+        osc.connect(filter); filter.connect(gain); gain.connect(this.sfxGain);
+        osc.start(t);
+        osc.stop(t + 0.2);
+    }
+
+    // Two-tone swap for hold piece.
+    playHold() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const t = this.audioCtx.currentTime;
+        const beep = (freq, start, dur) => {
+            const o = this.audioCtx.createOscillator();
+            const g = this.audioCtx.createGain();
+            o.type = 'triangle';
+            o.frequency.setValueAtTime(freq, start);
+            g.gain.setValueAtTime(0.12, start);
+            g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+            o.connect(g); g.connect(this.sfxGain);
+            o.start(start); o.stop(start + dur);
+        };
+        beep(660, t,        0.08);
+        beep(880, t + 0.06, 0.10);
+    }
+
+    // Bright triadic sting for shield activation.
+    playShieldUp() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const t = this.audioCtx.currentTime;
+        const beep = (freq, start, dur) => {
+            const o = this.audioCtx.createOscillator();
+            const g = this.audioCtx.createGain();
+            o.type = 'sine';
+            o.frequency.setValueAtTime(freq, start);
+            g.gain.setValueAtTime(0.18, start);
+            g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+            o.connect(g); g.connect(this.sfxGain);
+            o.start(start); o.stop(start + dur);
+        };
+        beep(523, t,        0.12); // C5
+        beep(659, t + 0.05, 0.14); // E5
+        beep(784, t + 0.10, 0.20); // G5
+    }
+
+    // Three rapid zaps for the lightning power-up.
+    playLightning() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const t = this.audioCtx.currentTime;
+        for (let i = 0; i < 3; i++) {
+            const start = t + i * 0.07;
+            const o = this.audioCtx.createOscillator();
+            const g = this.audioCtx.createGain();
+            o.type = 'sawtooth';
+            o.frequency.setValueAtTime(1200, start);
+            o.frequency.exponentialRampToValueAtTime(400, start + 0.06);
+            g.gain.setValueAtTime(0.15, start);
+            g.gain.exponentialRampToValueAtTime(0.001, start + 0.06);
+            o.connect(g); g.connect(this.sfxGain);
+            o.start(start); o.stop(start + 0.07);
+        }
+    }
+
+    // Rising fuse-tick for a bomb being sent.
+    playBombSent() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const t = this.audioCtx.currentTime;
+        for (let i = 0; i < 4; i++) {
+            const start = t + i * 0.05;
+            const o = this.audioCtx.createOscillator();
+            const g = this.audioCtx.createGain();
+            o.type = 'square';
+            o.frequency.setValueAtTime(1200 + i * 200, start);
+            g.gain.setValueAtTime(0.08, start);
+            g.gain.exponentialRampToValueAtTime(0.001, start + 0.04);
+            o.connect(g); g.connect(this.sfxGain);
+            o.start(start); o.stop(start + 0.05);
+        }
+    }
+
+    // Ascending rainbow chime for color buster.
+    playBuster() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const t = this.audioCtx.currentTime;
+        const notes = [523, 659, 784, 988, 1175]; // C E G B D6
+        notes.forEach((freq, i) => {
+            const start = t + i * 0.06;
+            const o = this.audioCtx.createOscillator();
+            const g = this.audioCtx.createGain();
+            o.type = 'triangle';
+            o.frequency.setValueAtTime(freq, start);
+            g.gain.setValueAtTime(0.12, start);
+            g.gain.exponentialRampToValueAtTime(0.001, start + 0.18);
+            o.connect(g); g.connect(this.sfxGain);
+            o.start(start); o.stop(start + 0.2);
+        });
+    }
+
+    // Snappy descending sting for T-spin success.
+    playTSpin() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const t = this.audioCtx.currentTime;
+        const o = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(1500, t);
+        o.frequency.exponentialRampToValueAtTime(500, t + 0.25);
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        o.connect(g); g.connect(this.sfxGain);
+        o.start(t); o.stop(t + 0.32);
+    }
+
+    // Bright fanfare for All-Clear.
+    playAllClear() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const t = this.audioCtx.currentTime;
+        const notes = [659, 784, 988, 1319]; // E G B E6 - bright major
+        notes.forEach((freq, i) => {
+            const start = t + i * 0.08;
+            const o = this.audioCtx.createOscillator();
+            const g = this.audioCtx.createGain();
+            o.type = 'triangle';
+            o.frequency.setValueAtTime(freq, start);
+            g.gain.setValueAtTime(0.2, start);
+            g.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+            o.connect(g); g.connect(this.sfxGain);
+            o.start(start); o.stop(start + 0.5);
+        });
     }
 }

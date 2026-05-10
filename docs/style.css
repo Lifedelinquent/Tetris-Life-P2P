@@ -629,6 +629,408 @@ body.single-player .p1-border {
     margin: 0 auto;
 }
 
+/* --- Settings panel --- */
+
+.settings-gear {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    border: 2px solid #0DC2FF;
+    color: #0DC2FF;
+    font-size: 1.4rem;
+    cursor: pointer;
+    z-index: 200;
+    box-shadow: 0 0 12px rgba(13, 194, 255, 0.5);
+    transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+.settings-gear:hover {
+    transform: rotate(90deg) scale(1.05);
+    box-shadow: 0 0 20px #0DC2FF, inset 0 0 10px rgba(13, 194, 255, 0.3);
+}
+
+.settings-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.settings-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+.settings-card {
+    position: relative;
+    background: linear-gradient(180deg, rgba(20, 20, 35, 0.97), rgba(0, 0, 0, 0.97));
+    border: 2px solid #0DC2FF;
+    border-radius: 12px;
+    padding: 22px 28px;
+    min-width: 480px;
+    max-width: 92vw;
+    max-height: 88vh;
+    overflow-y: auto;
+    box-shadow: 0 0 40px rgba(13, 194, 255, 0.45), inset 0 0 30px rgba(13, 194, 255, 0.06);
+    font-family: 'Press Start 2P', cursive;
+    color: #fff;
+    animation: settings-rise 0.22s ease-out;
+}
+@keyframes settings-rise {
+    0%   { opacity: 0; transform: translateY(20px) scale(0.97); }
+    100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid rgba(13, 194, 255, 0.3);
+}
+.settings-header h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    color: #0DC2FF;
+    text-shadow: 0 0 10px #0DC2FF;
+    letter-spacing: 2px;
+}
+.settings-close {
+    background: transparent;
+    border: 2px solid #ff3333;
+    color: #ff3333;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.7rem;
+}
+.settings-close:hover {
+    background: rgba(255, 51, 51, 0.2);
+    box-shadow: 0 0 10px #ff3333;
+}
+
+.settings-section {
+    margin-bottom: 18px;
+}
+.settings-section h3 {
+    margin: 0 0 10px 0;
+    font-size: 0.75rem;
+    color: #FFD700;
+    text-shadow: 0 0 6px #FFD700;
+    letter-spacing: 2px;
+}
+.settings-row {
+    display: grid;
+    grid-template-columns: 1fr 160px 60px;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 0;
+    font-size: 0.65rem;
+    line-height: 1.4;
+    color: #ddd;
+}
+.settings-row em {
+    font-style: normal;
+    color: #888;
+    font-size: 0.55rem;
+    display: block;
+    margin-top: 2px;
+}
+.settings-row input[type="range"] {
+    width: 100%;
+    accent-color: #0DC2FF;
+}
+.settings-num {
+    text-align: right;
+    color: #0DC2FF;
+    text-shadow: 0 0 6px #0DC2FF;
+    font-size: 0.7rem;
+}
+.settings-row-toggle {
+    grid-template-columns: 1fr auto;
+}
+.settings-row-toggle input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 44px;
+    height: 22px;
+    border-radius: 11px;
+    background: #333;
+    border: 1px solid #555;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+}
+.settings-row-toggle input[type="checkbox"]::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #888;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.2s, background 0.2s;
+}
+.settings-row-toggle input[type="checkbox"]:checked {
+    background: rgba(13, 194, 255, 0.35);
+    border-color: #0DC2FF;
+}
+.settings-row-toggle input[type="checkbox"]:checked::before {
+    transform: translateX(22px);
+    background: #0DC2FF;
+    box-shadow: 0 0 8px #0DC2FF;
+}
+
+.settings-footer {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* --- Power-up activation effects ---
+   Each effect inserts a self-cleaning DOM element (so we can stack them
+   and avoid keyframe-restart hacks). The element is removed by a setTimeout
+   in main.js after the animation duration. */
+
+/* SHIELD: green ring expanding outward, fading */
+.fx-shield-ring {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border: 4px solid #0DFF72;
+    border-radius: 4px;
+    box-shadow: 0 0 30px #0DFF72, inset 0 0 25px rgba(13, 255, 114, 0.55);
+    animation: fx-shield-ring 0.65s ease-out forwards;
+    z-index: 6;
+}
+@keyframes fx-shield-ring {
+    0%   { transform: scale(1);    opacity: 0.95; }
+    100% { transform: scale(1.35); opacity: 0; }
+}
+
+/* SHIELD BLOCKED: short green inner flash when an attack is absorbed */
+.fx-shield-blocked {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(13, 255, 114, 0.55) 0%, transparent 75%);
+    animation: fx-shield-blocked 0.5s ease-out forwards;
+    z-index: 6;
+}
+@keyframes fx-shield-blocked {
+    0%   { opacity: 0; }
+    20%  { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* LIGHTNING: zigzag SVG bolts crossing the player's board.
+   Each bolt is two stacked paths - a soft yellow halo + a sharp white core -
+   that draw on with stroke-dashoffset and then flash out. */
+.fx-lightning-bolt {
+    position: absolute;
+    top: -5%;
+    width: 80px;
+    height: 110%;
+    pointer-events: none;
+    opacity: 0;
+    animation: fx-bolt-flash 0.5s ease-out forwards;
+    z-index: 6;
+}
+.fx-lightning-bolt svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+.fx-bolt-halo,
+.fx-bolt-core {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    /* The dasharray > viewBox so the path "draws" by sliding offset to 0. */
+    stroke-dasharray: 200;
+    stroke-dashoffset: 200;
+    animation: fx-bolt-draw 0.18s ease-out forwards;
+}
+.fx-bolt-halo {
+    stroke: #FFE138;
+    stroke-width: 4;
+    filter: drop-shadow(0 0 8px #FFFF66) drop-shadow(0 0 16px #FFFF00);
+}
+.fx-bolt-core {
+    stroke: #FFFFFF;
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 4px #FFFFFF);
+}
+@keyframes fx-bolt-draw {
+    0%   { stroke-dashoffset: 200; }
+    100% { stroke-dashoffset: 0; }
+}
+@keyframes fx-bolt-flash {
+    0%   { opacity: 0; }
+    20%  { opacity: 1; }
+    70%  { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* BOMB SENT: emoji flies from sender's board to opponent's */
+.fx-bomb-flying-wrap {
+    position: fixed;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 1500;
+    transition: left 0.75s cubic-bezier(0.4, 0, 0.2, 1),
+                top 0.75s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: left, top;
+}
+.fx-bomb-flying {
+    font-size: 3rem;
+    text-shadow: 0 0 20px #ff00ff, 0 0 40px #ff00ff;
+    animation: fx-bomb-spin 0.75s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes fx-bomb-spin {
+    0%   { transform: scale(0.5) rotate(0deg); }
+    50%  { transform: scale(1.4) rotate(360deg); }
+    100% { transform: scale(2.0) rotate(720deg); }
+}
+
+/* Pink/magenta sparkle particle trailing the flying bomb. */
+.fx-bomb-sparkle {
+    position: fixed;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ff66ff 0%, #ff00ff 50%, transparent 100%);
+    pointer-events: none;
+    z-index: 1499;
+    transform: translate(-50%, -50%);
+    animation: fx-bomb-sparkle-fade 0.55s ease-out forwards;
+    box-shadow: 0 0 8px #ff00ff;
+}
+@keyframes fx-bomb-sparkle-fade {
+    0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -130%) scale(0.3); }
+}
+
+/* COLOR BUSTER: rainbow shockwave from the center of the board */
+.fx-buster-wave {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: conic-gradient(
+        from 0deg,
+        #FF0D72, #FFE138, #0DFF72, #0DC2FF, #F538FF, #FF0D72
+    );
+    transform: translate(-50%, -50%);
+    animation: fx-buster-wave 0.75s ease-out forwards;
+    pointer-events: none;
+    z-index: 6;
+    mix-blend-mode: screen;
+    opacity: 0.85;
+}
+@keyframes fx-buster-wave {
+    0%   { width: 0;    height: 0;    opacity: 1; }
+    100% { width: 220%; height: 220%; opacity: 0; }
+}
+
+/* Center flash burst that fires the moment Color Buster activates. */
+.fx-buster-burst {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 30%;
+    height: 30%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, #FFE138 40%, transparent 75%);
+    pointer-events: none;
+    z-index: 7;
+    animation: fx-buster-burst 0.32s ease-out forwards;
+    mix-blend-mode: screen;
+}
+@keyframes fx-buster-burst {
+    0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+}
+
+/* --- Screen shake --- */
+/* Two intensities. Each restarts the keyframe by removing+adding the class
+   in JS (with a forced reflow between). Per-side container so big plays
+   only shake the affected board. */
+@keyframes shake-light {
+    0%, 100% { transform: translate(0, 0); }
+    20%      { transform: translate(-3px, 2px); }
+    40%      { transform: translate(3px, -2px); }
+    60%      { transform: translate(-2px, 1px); }
+    80%      { transform: translate(2px, -1px); }
+}
+@keyframes shake-heavy {
+    0%, 100% { transform: translate(0, 0); }
+    10%      { transform: translate(-7px, -4px); }
+    20%      { transform: translate(8px, 3px); }
+    30%      { transform: translate(-6px, 5px); }
+    40%      { transform: translate(7px, -3px); }
+    50%      { transform: translate(-5px, 4px); }
+    60%      { transform: translate(6px, -2px); }
+    70%      { transform: translate(-4px, 3px); }
+    80%      { transform: translate(3px, -2px); }
+    90%      { transform: translate(-2px, 1px); }
+}
+.shake-light { animation: shake-light 0.22s ease-out; }
+.shake-heavy { animation: shake-heavy 0.4s ease-out; }
+
+/* --- Tetris / T-Spin white flash --- */
+#flash-overlay {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9998;
+    transition: opacity 0.18s ease-out;
+}
+#flash-overlay.flash {
+    opacity: 0.55;
+    transition: opacity 0.05s ease-in;
+}
+
+/* --- CRT scanlines + vignette ---
+   Subtle. Sits above gameplay but below modals. Pure CSS, near-zero perf cost.
+   Easy to disable via `body.no-crt` for a future setting. */
+#crt-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 50;
+    background:
+        repeating-linear-gradient(
+            0deg,
+            rgba(0, 0, 0, 0.18) 0px,
+            rgba(0, 0, 0, 0.18) 1px,
+            transparent 1px,
+            transparent 3px
+        ),
+        radial-gradient(
+            ellipse at center,
+            transparent 55%,
+            rgba(0, 0, 0, 0.55) 100%
+        );
+    mix-blend-mode: multiply;
+}
+body.no-crt #crt-overlay { display: none; }
+
 /* Danger Mode */
 @keyframes danger-pulse {
     0% {
@@ -651,6 +1053,32 @@ body.single-player .p1-border {
     animation: danger-pulse 0.5s infinite;
 }
 
+/* Stronger vignette overlay inside the playfield when stack is high.
+   Red radial closes in from the edges - reads as urgency without
+   obscuring the actual blocks. */
+.main-board-container::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+        ellipse at center,
+        transparent 50%,
+        rgba(255, 0, 0, 0.55) 100%
+    );
+    opacity: 0;
+    transition: opacity 0.25s;
+    z-index: 5;
+}
+.main-board-container.danger-mode::after {
+    opacity: 1;
+    animation: danger-vignette-pulse 0.7s ease-in-out infinite;
+}
+@keyframes danger-vignette-pulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1.0; }
+}
+
 /* Floating Text */
 .floating-text {
     position: absolute;
@@ -661,25 +1089,177 @@ body.single-player .p1-border {
     white-space: nowrap;
 }
 
-/* Combo Meter (Simple Heat Bar) */
-#combo-container {
-    margin-top: 10px;
-    width: 100px;
-    /* Match Next/Hold canvas width approx */
-    height: 10px;
-    background: #333;
-    border: 1px solid #555;
-    position: relative;
-    display: none;
-    /* Hidden by default until combo starts */
+/* --- Animated lobby title --- */
+/* Subtle hue cycling on the existing neon title - keeps the magenta glow
+   identity but adds life. Pauses the rest of the time (Reduced Motion users
+   stay still). */
+.lobby-title {
+    animation: lobby-title-hue 10s linear infinite;
+}
+@keyframes lobby-title-hue {
+    0%   { filter: hue-rotate(0deg); }
+    50%  { filter: hue-rotate(60deg); }
+    100% { filter: hue-rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lobby-title { animation: none; }
 }
 
-#combo-fill {
+/* --- Lobby marquee --- */
+.lobby-marquee {
+    position: absolute;
+    bottom: 18px;
+    left: 0;
+    right: 0;
+    overflow: hidden;
+    height: 28px;
+    pointer-events: none;
+    /* Soft mask so the text fades in/out at the edges */
+    mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.lobby-marquee-track {
+    display: inline-block;
+    white-space: nowrap;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 0.85rem;
+    color: #FFD700;
+    text-shadow: 0 0 8px #FFD700, 0 0 16px #FFA500;
+    line-height: 28px;
+    animation: marquee-scroll 28s linear infinite;
+    will-change: transform;
+}
+@keyframes marquee-scroll {
+    0%   { transform: translateX(0); }
+    /* The duplicated text in the HTML means -50% returns to a seamless start */
+    100% { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lobby-marquee-track { animation: none; }
+}
+
+/* --- Match-end stats card --- */
+.stats-card {
+    background: linear-gradient(180deg, rgba(20, 20, 35, 0.95), rgba(0, 0, 0, 0.95));
+    border: 2px solid #0DC2FF;
+    border-radius: 12px;
+    padding: 20px 30px;
+    margin-bottom: 10px;
+    min-width: 380px;
+    box-shadow: 0 0 30px rgba(13, 194, 255, 0.4), inset 0 0 30px rgba(13, 194, 255, 0.1);
+    font-family: 'Press Start 2P', cursive;
+}
+.stats-card .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    opacity: 0;
+    transform: translateX(-10px);
+}
+/* Animation only fires while the parent has .revealing - removing+re-adding
+   the class on rematch replays the staggered reveal. */
+.stats-card.revealing .stat-row {
+    animation: stat-reveal 0.4s ease-out forwards;
+    animation-delay: var(--reveal-delay, 0s);
+}
+.stats-card .stat-row:last-child { border-bottom: none; }
+.stats-card .stat-label {
+    font-size: 0.7rem;
+    color: #aaa;
+    letter-spacing: 1px;
+}
+.stats-card .stat-value {
+    font-size: 1.1rem;
+    color: #fff;
+    text-shadow: 0 0 8px #0DC2FF;
+}
+.stats-card .final-score .stat-label {
+    color: #FFD700;
+    font-size: 0.85rem;
+}
+.stats-card .final-score .stat-value {
+    font-size: 1.6rem;
+    color: #FFD700;
+    text-shadow: 0 0 10px #FFD700, 0 0 20px #FFD700;
+}
+@keyframes stat-reveal {
+    0%   { opacity: 0; transform: translateX(-10px); }
+    100% { opacity: 1; transform: translateX(0); }
+}
+
+/* Combo wrapper: number + heat bar + optional B2B badge */
+.combo-wrap {
+    margin: 6px auto 0;
+    width: 130px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+.combo-label {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 0.7rem;
+    color: #fff;
+    text-shadow: 0 0 8px #FFE138, 0 0 16px #FFE138;
+    letter-spacing: 1px;
+    animation: combo-pulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes combo-pulse {
+    0%   { transform: scale(1); }
+    100% { transform: scale(1.05); }
+}
+/* The combo number itself bumps on each increment. */
+.combo-label .combo-bump {
+    display: inline-block;
+    animation: combo-bump 0.32s ease-out;
+}
+@keyframes combo-bump {
+    0%   { transform: scale(1);   color: #fff; }
+    35%  { transform: scale(1.6); color: #FFD700; text-shadow: 0 0 10px #FFD700, 0 0 20px #FFD700; }
+    100% { transform: scale(1);   color: #fff; }
+}
+.combo-track {
+    width: 100%;
+    height: 8px;
+    background: #1a1a1a;
+    border: 1px solid #555;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.combo-fill {
     height: 100%;
     width: 0%;
     background: linear-gradient(90deg, #0DC2FF, #FFE138, #FF0D72);
-    transition: width 0.2s ease-out;
-    box-shadow: 0 0 10px currentColor;
+    transition: width 0.2s ease-out, background 0.2s, box-shadow 0.2s;
+    box-shadow: 0 0 8px currentColor;
+}
+.b2b-badge {
+    margin-top: 3px;
+    padding: 2px 8px;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 0.55rem;
+    color: #000;
+    background: linear-gradient(135deg, #FFE138, #FFA500);
+    border-radius: 3px;
+    box-shadow: 0 0 12px #FFE138;
+    letter-spacing: 1px;
+    animation: b2b-shimmer 1.2s ease-in-out infinite alternate;
+}
+@keyframes b2b-shimmer {
+    0%   { box-shadow: 0 0 8px #FFE138;  filter: brightness(1); }
+    100% { box-shadow: 0 0 18px #FFE138; filter: brightness(1.2); }
+}
+
+/* Score "tick" pop when score animates upward */
+.score-pop {
+    animation: score-pop 0.3s ease-out;
+}
+@keyframes score-pop {
+    0%   { transform: scale(1);    color: #fff; }
+    35%  { transform: scale(1.25); color: #FFD700; text-shadow: 0 0 10px #FFD700; }
+    100% { transform: scale(1);    color: #fff; }
 }
 
 /* Shield Visual Effects */

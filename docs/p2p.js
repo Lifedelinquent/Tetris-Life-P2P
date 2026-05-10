@@ -2,8 +2,15 @@
  * P2P Handler for Tetris Life Battle
  * Uses PeerJS for WebRTC peer-to-peer connections
  */
+import {
+    HOST_USER_ID,
+    GUEST_USER_ID,
+    STORAGE_STATS_KEY,
+} from './config.js';
 
 export class P2PHandler {
+    static STATS_KEY = STORAGE_STATS_KEY;
+
     constructor(roomCode = null, isHost = false) {
         this.roomCode = roomCode;
         this.isHost = isHost;
@@ -23,8 +30,6 @@ export class P2PHandler {
 
         // Stats persistence
         this.stats = this.loadStats();
-
-        console.log(`P2P Handler initialized. Room: ${roomCode}, Host: ${isHost}`);
     }
 
     // --- Connection Management ---
@@ -50,11 +55,8 @@ export class P2PHandler {
     createRoom(onReady, onConnect, onError) {
         this.isHost = true;
         this.roomCode = P2PHandler.generateRoomCode();
-        this.userId = 'Lifedelinquent'; // Host is always Lifedelinquent
-        this.opponentId = 'ChronoKoala';
-
-        // Reload stats now that we know we're the host
-        this.stats = this.loadStats();
+        this.userId = HOST_USER_ID;
+        this.opponentId = GUEST_USER_ID;
 
         // Prefix room code to avoid collisions on PeerJS cloud
         const peerId = `tetris-life-${this.roomCode}`;
@@ -63,13 +65,11 @@ export class P2PHandler {
             debug: 1 // Minimal logging
         });
 
-        this.peer.on('open', (id) => {
-            console.log('Room created with ID:', id);
+        this.peer.on('open', () => {
             onReady(this.roomCode);
         });
 
         this.peer.on('connection', (conn) => {
-            console.log('Opponent connected!');
             this.conn = conn;
             this.setupConnection(conn, onConnect);
         });
@@ -96,11 +96,8 @@ export class P2PHandler {
     joinRoom(roomCode, onConnect, onError) {
         this.isHost = false;
         this.roomCode = roomCode.toUpperCase();
-        this.userId = 'ChronoKoala'; // Guest is always ChronoKoala
-        this.opponentId = 'Lifedelinquent';
-
-        // Reload stats now that we know we're the guest
-        this.stats = this.loadStats();
+        this.userId = GUEST_USER_ID;
+        this.opponentId = HOST_USER_ID;
 
         const peerId = `tetris-life-${this.roomCode}-guest-${Date.now()}`;
         const hostId = `tetris-life-${this.roomCode}`;
@@ -110,11 +107,9 @@ export class P2PHandler {
         });
 
         this.peer.on('open', () => {
-            console.log('Connecting to room:', this.roomCode);
             const conn = this.peer.connect(hostId, { reliable: true });
 
             conn.on('open', () => {
-                console.log('Connected to host!');
                 this.conn = conn;
                 this.setupConnection(conn, onConnect);
             });
@@ -146,7 +141,6 @@ export class P2PHandler {
         });
 
         conn.on('close', () => {
-            console.log('Connection closed');
             this.connected = false;
             if (this.callbacks.onDisconnect) {
                 this.callbacks.onDisconnect();
@@ -240,7 +234,6 @@ export class P2PHandler {
             effect: effect,
             timestamp: Date.now()
         });
-        console.log(`Sent ${lines} lines to ${opponentId}, effect: ${effect}`);
     }
 
     async sendBomb(opponentId) {
@@ -249,7 +242,6 @@ export class P2PHandler {
             to: opponentId,
             timestamp: Date.now()
         });
-        console.log(`Sent bomb to ${opponentId}`);
     }
 
     // --- Listeners ---
@@ -262,7 +254,6 @@ export class P2PHandler {
     handleBomb(payload) {
         if (payload.to === this.userId && payload.timestamp > this.lastProcessedBombTime) {
             this.lastProcessedBombTime = payload.timestamp;
-            console.log('Received bomb from', payload.from);
             if (this.callbacks.onBomb) this.callbacks.onBomb();
         }
     }
@@ -287,7 +278,6 @@ export class P2PHandler {
     handleAttack(payload) {
         if (payload.to === this.userId && payload.timestamp > this.lastProcessedAttackTime) {
             this.lastProcessedAttackTime = payload.timestamp;
-            console.log('Received attack!', payload.lines, 'Effect:', payload.effect);
             if (this.callbacks.onAttack) this.callbacks.onAttack(payload.lines, payload.effect);
         }
     }
@@ -299,7 +289,6 @@ export class P2PHandler {
     async setReady(userId) {
         this.gameState[`ready_${userId}`] = Date.now();
         this.send('ready', { userId, timestamp: Date.now() });
-        console.log(`${userId} is ready!`);
 
         // Update local UI immediately
         if (this.callbacks.onReadyStatus) {
@@ -320,7 +309,6 @@ export class P2PHandler {
     async clearReadyForPlayer(userId) {
         this.gameState[`ready_${userId}`] = null;
         this.send('ready', { userId, timestamp: null });
-        console.log(`${userId} unreadied!`);
 
         // Update local UI immediately (same as setReady)
         if (this.callbacks.onReadyStatus) {
@@ -390,7 +378,6 @@ export class P2PHandler {
             wins: payload.wins || 0,
             losses: payload.losses || 0
         };
-        console.log('Received opponent stats:', this.opponentStats);
         if (this.callbacks.onOpponentStats) {
             this.callbacks.onOpponentStats(this.opponentStats);
         }
@@ -415,7 +402,6 @@ export class P2PHandler {
         this.gameState.matchStart = startData;
         this.lastStartTime = startData.timestamp; // Prevent duplicate handling
         this.send('matchStart', startData);
-        console.log('Match start triggered');
 
         // Also start the host's own game
         if (this.callbacks.onMatchStart) {
@@ -468,7 +454,6 @@ export class P2PHandler {
         };
         this.gameState.pauseState = pauseState;
         this.send('pause', pauseState);
-        console.log(`${this.userId} ${isPaused ? 'paused' : 'unpaused'} the game`);
 
         // Also apply pause locally
         if (this.callbacks.onPause) {
@@ -505,26 +490,43 @@ export class P2PHandler {
     }
 
     // --- Stats Persistence (localStorage) ---
-    // Stats are saved per-player so each browser tracks both players' records
+    // One stats record per browser/player identity, regardless of host/guest role.
+    // The opponent's record is exchanged over P2P (sendStats / handleStats).
 
     loadStats() {
         try {
-            // Load stats for the current player (based on whether host or guest)
-            const key = this.isHost ? 'tetris_life_stats_life' : 'tetris_life_stats_chrono';
-            const saved = localStorage.getItem(key);
-            if (saved) {
-                return JSON.parse(saved);
-            }
+            const saved = localStorage.getItem(P2PHandler.STATS_KEY);
+            if (saved) return this._migrateLegacyStats(JSON.parse(saved));
         } catch (e) {
             console.warn('Could not load stats:', e);
         }
-        return { name: '', wins: 0, losses: 0, pb: 0 };
+        // One-time migration from the old role-keyed records.
+        return this._migrateLegacyStats(null);
+    }
+
+    // If legacy host/guest keys exist and the new key is empty, fold them in.
+    // We pick whichever legacy record has the most games played.
+    _migrateLegacyStats(current) {
+        if (current) return current;
+        let best = { name: '', wins: 0, losses: 0, pb: 0 };
+        try {
+            for (const legacyKey of ['tetris_life_stats_life', 'tetris_life_stats_chrono']) {
+                const raw = localStorage.getItem(legacyKey);
+                if (!raw) continue;
+                const parsed = JSON.parse(raw);
+                const total = (parsed.wins || 0) + (parsed.losses || 0);
+                const bestTotal = best.wins + best.losses;
+                if (total > bestTotal) best = parsed;
+            }
+        } catch (e) {
+            console.warn('Stats migration failed:', e);
+        }
+        return best;
     }
 
     saveStats() {
         try {
-            const key = this.isHost ? 'tetris_life_stats_life' : 'tetris_life_stats_chrono';
-            localStorage.setItem(key, JSON.stringify(this.stats));
+            localStorage.setItem(P2PHandler.STATS_KEY, JSON.stringify(this.stats));
         } catch (e) {
             console.warn('Could not save stats:', e);
         }
@@ -542,38 +544,6 @@ export class P2PHandler {
         this.stats.wins = 0;
         this.stats.losses = 0;
         this.saveStats();
-        console.log('Stats reset to 0-0');
-    }
-
-    /**
-     * Get win/loss records for both players (for lobby display)
-     * @returns {{ life: {wins: number, losses: number}, chrono: {wins: number, losses: number} }}
-     */
-    static getPlayerRecords() {
-        let lifeStats = { wins: 0, losses: 0 };
-        let chronoStats = { wins: 0, losses: 0 };
-
-        try {
-            const lifeSaved = localStorage.getItem('tetris_life_stats_life');
-            if (lifeSaved) {
-                const parsed = JSON.parse(lifeSaved);
-                lifeStats = { wins: parsed.wins || 0, losses: parsed.losses || 0 };
-            }
-        } catch (e) {
-            console.warn('Could not load Life stats:', e);
-        }
-
-        try {
-            const chronoSaved = localStorage.getItem('tetris_life_stats_chrono');
-            if (chronoSaved) {
-                const parsed = JSON.parse(chronoSaved);
-                chronoStats = { wins: parsed.wins || 0, losses: parsed.losses || 0 };
-            }
-        } catch (e) {
-            console.warn('Could not load Chrono stats:', e);
-        }
-
-        return { life: lifeStats, chrono: chronoStats };
     }
 
     // --- Cleanup ---

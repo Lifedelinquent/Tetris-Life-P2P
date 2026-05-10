@@ -1,3 +1,5 @@
+import { BOMB_COUNTDOWN_MS } from './config.js';
+
 export const COLS = 12;
 export const ROWS = 20;
 export const BLOCK_SIZE = 40;
@@ -67,10 +69,13 @@ export class TetrisEngine {
 
         // Timer Mine Bomb System
         this.activeBombs = []; // Array of { x, y, expiresAt, timerId }
-        this.bombCountdown = 10000; // 10 seconds in ms
+        this.bombCountdown = BOMB_COUNTDOWN_MS;
 
         // Color Buster - tracks the actual shape for BUSTER pieces
         this.busterShape = null;
+
+        // Visual toggles - main.js sets these from the settings module.
+        this.showGhost = true;
 
         this.initBag();
         this.spawnPiece();
@@ -82,7 +87,13 @@ export class TetrisEngine {
 
     initBag() {
         if (this.bag.length === 0) {
-            this.bag = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'].sort(() => Math.random() - 0.5);
+            const types = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
+            // Fisher-Yates: uniform shuffle (`.sort(() => Math.random()-0.5)` is biased)
+            for (let i = types.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [types[i], types[j]] = [types[j], types[i]];
+            }
+            this.bag = types;
         }
         while (this.nextPieces.length < 3) {
             if (this.bag.length === 0) this.initBag();
@@ -92,16 +103,22 @@ export class TetrisEngine {
     }
 
     spawnPiece() {
-        // Debug Log
-        console.log('Spawning Piece. Queue before shift:', [...this.nextPieces]);
         const type = this.nextPieces.shift();
-        console.log('Spawned Type:', type);
         this.initBag();
         this.currentPiece = type;
-        this.pos = { x: Math.floor(COLS / 2) - 2, y: 0 };
+        // Spawn one row above the visible grid so pieces "rise into view"
+        // and (more importantly) we only top-out when the piece's filled
+        // cells actually overlap the stack, not when it merely touches the
+        // top edge. Negative rows are skipped by collide() so this is safe.
+        this.pos = { x: Math.floor(COLS / 2) - 2, y: -1 };
         this.rotation = 0;
         this.canHold = true;
         this.lastMoveWasRotation = false;
+
+        // Lock-delay state - resets per piece. The caller (main.js) drives
+        // the timer and decides when to actually lock.
+        this.groundedAtMs = null;
+        this.lockResetsUsed = 0;
 
         // If this is a Color Buster, assign a random normal tetris shape
         if (type === 'BUSTER') {
@@ -159,23 +176,67 @@ export class TetrisEngine {
         this.rotation = oldRotation;
     }
 
-    isTSpin() {
-        if (this.currentPiece !== 'T' || !this.lastMoveWasRotation) return false;
+    // Returns true if the piece is touching the floor or another block below.
+    isGrounded() {
+        this.pos.y++;
+        const blocked = this.collide();
+        this.pos.y--;
+        return blocked;
+    }
 
-        let corners = 0;
+    // Lock-delay reset request from the caller after a successful move/rotate.
+    // Each piece is allowed at most `maxResets` refreshes - after that the
+    // lock timer keeps running regardless of further input (anti-stall).
+    tryLockDelayReset(now, maxResets) {
+        if (!this.isGrounded()) {
+            this.groundedAtMs = null;
+            return;
+        }
+        if (this.groundedAtMs === null || this.lockResetsUsed < maxResets) {
+            this.groundedAtMs = now;
+            this.lockResetsUsed++;
+        }
+    }
+
+    // True if grounded and lock delay has elapsed.
+    shouldLock(now, lockDelayMs) {
+        return this.groundedAtMs !== null && (now - this.groundedAtMs) >= lockDelayMs;
+    }
+
+    // Returns null (no T-spin), 'mini', or 'full'.
+    //  - Requires a T-piece whose last successful action was a rotation.
+    //  - 3-corner rule: at least 3 of the 4 corners around the 3x3 box must
+    //    be filled (by walls, floor, or stack).
+    //  - "Pointing" corners are the two on the side the T-tip faces.
+    //    Both pointing corners filled => full T-spin; otherwise mini.
+    isTSpin() {
+        if (this.currentPiece !== 'T' || !this.lastMoveWasRotation) return null;
+
         const x = this.pos.x;
         const y = this.pos.y;
 
-        // 3-corner rule
-        const check = [[0, 0], [2, 0], [0, 2], [2, 2]];
-        check.forEach(([dx, dy]) => {
+        // Corner indices: 0=TL, 1=TR, 2=BL, 3=BR
+        const corners = [[0, 0], [2, 0], [0, 2], [2, 2]];
+        const filled = corners.map(([dx, dy]) => {
             const bx = x + dx;
             const by = y + dy;
-            if (bx < 0 || bx >= COLS || by >= ROWS || (by >= 0 && this.grid[by][bx] !== 0)) {
-                corners++;
-            }
+            const outOfBounds = bx < 0 || bx >= COLS || by >= ROWS;
+            const blocked = by >= 0 && by < ROWS && this.grid[by] && this.grid[by][bx] !== 0;
+            return outOfBounds || blocked;
         });
-        return corners >= 3;
+        const totalFilled = filled.filter(Boolean).length;
+        if (totalFilled < 3) return null;
+
+        // Pointing corners by rotation. The T-tip points: 0=up, 1=right, 2=down, 3=left.
+        //  rot 0 (tip up):    pointing = TL, TR  (indices 0, 1)
+        //  rot 1 (tip right): pointing = TR, BR  (indices 1, 3)
+        //  rot 2 (tip down):  pointing = BR, BL  (indices 3, 2)
+        //  rot 3 (tip left):  pointing = BL, TL  (indices 2, 0)
+        const pointingByRotation = [[0, 1], [1, 3], [3, 2], [2, 0]];
+        const [a, b] = pointingByRotation[this.rotation];
+        const pointingFilled = (filled[a] ? 1 : 0) + (filled[b] ? 1 : 0);
+
+        return pointingFilled === 2 ? 'full' : 'mini';
     }
 
     getRotatedMatrix(type, rotation) {
@@ -231,9 +292,7 @@ export class TetrisEngine {
         const isBuster = this.currentPiece === 'BUSTER';
         const bombExpiresAt = isBomb ? Date.now() + this.bombCountdown : null;
 
-        // For Buster: collect positions and adjacent colors
         const busterPositions = [];
-        const touchedColors = {};
 
         matrix.forEach((row, y) => {
             row.forEach((value, x) => {
@@ -241,14 +300,12 @@ export class TetrisEngine {
                     const gridY = this.pos.y + y;
                     const gridX = this.pos.x + x;
                     if (gridY >= 0) {
-                        // For normal pieces and bombs, place on grid
                         if (!isBuster) {
                             this.grid[gridY][gridX] = this.currentPiece;
                         } else {
                             busterPositions.push({ x: gridX, y: gridY });
                         }
 
-                        // Register bomb blocks for countdown
                         if (isBomb) {
                             this.activeBombs.push({
                                 x: gridX,
@@ -261,52 +318,40 @@ export class TetrisEngine {
             });
         });
 
-        // Start bomb detonation callback if we just placed a bomb
         if (isBomb && this.onBombPlaced) {
             this.onBombPlaced(bombExpiresAt);
         }
 
-        // Color Buster: Detect colors, remove most-touched, apply gravity
-        if (isBuster) {
-            this.executeColorBuster(busterPositions);
-        }
+        // Color Buster: detect target color, remove, gravity. Returns metadata.
+        this.lastBusterResult = isBuster
+            ? this.executeColorBuster(busterPositions)
+            : null;
     }
 
-    // Color Buster: Find most-touched color, remove all of it, apply gravity
+    // Color Buster: find most-touched color, remove all of it, apply gravity.
+    // Returns { busted: boolean, removed: number, color: string|null }.
     executeColorBuster(busterPositions) {
-        const touchedColors = {}; // Maps hex color to count
-        const colorToTypes = {}; // Maps hex color to array of piece types with that color
-
-        // Check all 4 directions (up, down, left, right) for each buster block
-        const directions = [[-1, 0], [1, 0], [0, -1], [0, 1], [0, 0]]; // Include current pos if overlapping
+        const touchedColors = {};
+        const directions = [[-1, 0], [1, 0], [0, -1], [0, 1], [0, 0]];
 
         busterPositions.forEach(pos => {
             directions.forEach(([dy, dx]) => {
                 const checkY = pos.y + dy;
                 const checkX = pos.x + dx;
-
                 if (checkY >= 0 && checkY < ROWS && checkX >= 0 && checkX < COLS) {
                     const pieceType = this.grid[checkY][checkX];
-                    // Only count actual tetris piece types (not garbage, bomb, empty, buster)
-                    if (pieceType && pieceType !== 0 && pieceType !== 'G' && pieceType !== 'BOMB' && pieceType !== 'B' && pieceType !== 'BUSTER') {
+                    if (pieceType && pieceType !== 'G' && pieceType !== 'BOMB' && pieceType !== 'B' && pieceType !== 'BUSTER') {
                         const hexColor = COLORS[pieceType];
                         if (hexColor) {
                             touchedColors[hexColor] = (touchedColors[hexColor] || 0) + 1;
-                            // Track which piece types have this color
-                            if (!colorToTypes[hexColor]) colorToTypes[hexColor] = new Set();
-                            colorToTypes[hexColor].add(pieceType);
                         }
                     }
                 }
             });
         });
 
-        console.log('Color Buster touched colors (hex):', touchedColors);
-
-        // Find the most touched hex color
         let maxCount = 0;
         let targetColors = [];
-
         for (const [hexColor, count] of Object.entries(touchedColors)) {
             if (count > maxCount) {
                 maxCount = count;
@@ -317,47 +362,38 @@ export class TetrisEngine {
         }
 
         if (targetColors.length === 0) {
-            console.log('Color Buster: No colors touched!');
-            return;
+            // Fizzle: no neighbors. Caller (BattleManager) will refund the cost.
+            return { busted: false, removed: 0, color: null };
         }
 
-        // If tied, pick random
         const targetHexColor = targetColors[Math.floor(Math.random() * targetColors.length)];
-        console.log(`Color Buster: Busting all ${targetHexColor} blocks!`);
 
-        // Count and remove all blocks with matching hex color
-        let removedCount = 0; // blocks removed
+        let removedCount = 0;
         let particlesSpawned = 0;
-        const PARTICLE_CAP = 20; // Prevent massive lag if clearing 50+ blocks
+        const PARTICLE_CAP = 20;
 
         for (let y = 0; y < ROWS; y++) {
             for (let x = 0; x < COLS; x++) {
                 const pieceType = this.grid[y][x];
-                if (pieceType && pieceType !== 0 && COLORS[pieceType] === targetHexColor) {
-                    // Spawn effect at each removed block (capped)
+                if (pieceType && COLORS[pieceType] === targetHexColor) {
                     if (particlesSpawned < PARTICLE_CAP) {
                         this.spawnBlockEffect(x * BLOCK_SIZE, y * BLOCK_SIZE, targetHexColor, 2);
                         particlesSpawned++;
                     }
                     this.grid[y][x] = 0;
                     removedCount++;
-                } else if (pieceType && pieceType !== 0 && COLORS[pieceType] !== targetHexColor) {
-                    // Debug log for misses (sample)
-                    if (Math.random() < 0.01) console.log('Skipped block:', pieceType, COLORS[pieceType]);
                 }
             }
         }
 
-        console.log(`Color Buster: Removed ${removedCount} blocks of color ${targetHexColor}!`);
-
-        // Apply gravity - make blocks fall down
         this.applyGravity();
 
-        // Visual feedback
         if (window.arcade) {
             window.arcade.createFloatingText(`🌈 BUSTED ${removedCount}!`,
                 window.innerWidth * 0.5, window.innerHeight * 0.4, targetHexColor);
         }
+
+        return { busted: true, removed: removedCount, color: targetHexColor };
     }
 
     // Apply gravity after Color Buster removes blocks
@@ -382,10 +418,14 @@ export class TetrisEngine {
         }
     }
 
-    // Timer Mine Bomb Methods
+    // Timer Mine Bomb Methods - the BattleManager owns the (pausable) timer
+    // and may set bombSecondsProvider to delegate the displayed countdown.
     getBombTimeRemaining() {
-        // Returns time remaining for active bombs (for rendering countdown)
         if (this.activeBombs.length === 0) return null;
+        if (typeof this.bombSecondsProvider === 'function') {
+            return this.bombSecondsProvider();
+        }
+        // Fallback (shouldn't happen once BattleManager is wired): use absolute time
         const now = Date.now();
         const minExpiry = Math.min(...this.activeBombs.map(b => b.expiresAt));
         return Math.max(0, Math.ceil((minExpiry - now) / 1000));
@@ -400,9 +440,7 @@ export class TetrisEngine {
 
         if (bombsInClearedRows.length > 0) {
             // If ANY part of the bomb is cleared, FULLY defuse the entire bomb
-            // This is more intuitive and rewards quick play
-            console.log(`Bomb defused! Cleared ${bombsInClearedRows.length} of ${initialCount} bomb blocks`);
-
+            // (intuitive + rewards quick play)
             // Remove ALL remaining bomb blocks from the grid
             for (let y = 0; y < this.grid.length; y++) {
                 for (let x = 0; x < this.grid[y].length; x++) {
@@ -429,31 +467,21 @@ export class TetrisEngine {
     }
 
     detonateBombs() {
-        // Called when bomb timer expires - find and clear all BOMB blocks from grid
-        console.log('detonateBombs called! activeBombs:', this.activeBombs.length);
-
+        // Called when bomb timer expires - clear all BOMB blocks from the grid.
+        // Positions may have shifted since merge, so scan the whole grid.
+        // No gravity here: explosion shouldn't help by compacting garbage.
         let detonatedCount = 0;
-
-        // Scan entire grid for BOMB blocks (positions may have shifted)
         for (let y = 0; y < ROWS; y++) {
             for (let x = 0; x < COLS; x++) {
                 if (this.grid[y][x] === 'BOMB') {
-                    console.log(`Detonating bomb at (${x}, ${y})`);
                     this.grid[y][x] = 0;
-                    // Spawn explosion effect
                     this.spawnBlockEffect(x * BLOCK_SIZE, y * BLOCK_SIZE, '#ff00ff', 4);
                     detonatedCount++;
                 }
             }
         }
-
         this.activeBombs = [];
-        console.log(`Detonated ${detonatedCount} bomb blocks`);
-
-        // NOTE: Do NOT apply gravity here - bomb explosion should NOT help the player
-        // by compacting their garbage lines. The bomb blocks just disappear.
-
-        return detonatedCount > 0 ? 1 : 0; // Return 1 bomb detonation for 2 lines
+        return detonatedCount > 0 ? 1 : 0;
     }
 
     spawnBlockEffect(x, y, color, intensity) {
@@ -565,27 +593,45 @@ export class TetrisEngine {
         return { linesCleared, bombDefused };
     }
 
+    // Try to fall by one row. Returns { dropped: boolean }.
+    // Lock decisions are driven externally via shouldLock() / lockPiece(),
+    // so a drop blocked by the floor no longer auto-locks.
     drop() {
         this.pos.y++;
         if (this.collide()) {
             this.pos.y--;
-            this.merge();
-            const result = this.clearLines();
-            this.spawnPiece();
-            return { ...result, locked: true };
+            return { dropped: false };
         }
-        return { locked: false };
+        // Falling counts as a non-rotation move for T-spin tracking.
+        this.lastMoveWasRotation = false;
+        return { dropped: true };
     }
 
-    hardDrop() {
-        while (!this.collide()) {
-            this.pos.y++;
-        }
-        this.pos.y--;
+    // Merge current piece, clear lines, spawn next. Used both by hardDrop
+    // and by main.js when the lock-delay timer expires.
+    lockPiece() {
         this.merge();
+        const busterResult = this.lastBusterResult;
         const result = this.clearLines();
         this.spawnPiece();
-        return { ...result, locked: true };
+        return { ...result, busterResult, locked: true };
+    }
+
+    // Hard drop bypasses lock delay - falls all the way and locks immediately.
+    // Returns the lock result with `cellsDropped` for scoring.
+    hardDrop() {
+        let cellsDropped = 0;
+        while (!this.collide()) {
+            this.pos.y++;
+            cellsDropped++;
+        }
+        this.pos.y--;
+        cellsDropped--; // last increment was the colliding step
+        this.lastMoveWasRotation = false;
+        const result = this.lockPiece();
+        result.cellsDropped = Math.max(0, cellsDropped);
+        result.wasHardDrop = true;
+        return result;
     }
 
     hold() {
@@ -594,7 +640,12 @@ export class TetrisEngine {
             const temp = this.currentPiece;
             this.currentPiece = this.holdPiece;
             this.holdPiece = temp;
-            this.pos = { x: Math.floor(COLS / 2) - 2, y: 0 };
+            // Match the spawn-buffer y so the swapped piece also rises into view.
+            this.pos = { x: Math.floor(COLS / 2) - 2, y: -1 };
+            this.rotation = 0;
+            this.lastMoveWasRotation = false;
+            this.groundedAtMs = null;
+            this.lockResetsUsed = 0;
         } else {
             this.holdPiece = this.currentPiece;
             this.spawnPiece();
@@ -607,37 +658,27 @@ export class TetrisEngine {
         if (!this.nextCanvas) return;
         const ctx = this.nextCanvas.getContext('2d');
         ctx.clearRect(0, 0, this.nextCanvas.width, this.nextCanvas.height);
+        const cell = 20;
+
         this.nextPieces.forEach((type, i) => {
-            // BUSTER uses T-piece shape for display (actual shape assigned at spawn)
+            // BUSTER doesn't have a fixed shape - show a T as a stand-in.
             const displayType = type === 'BUSTER' ? 'T' : type;
             const matrix = PIECES[displayType];
-
-            if (!matrix) {
-                console.warn(`No matrix for piece type: ${type}, displayType: ${displayType}`);
-                return;
-            }
+            if (!matrix) return;
 
             matrix.forEach((row, y) => {
                 row.forEach((value, x) => {
-                    if (value !== 0) {
-                        // BUSTER gets rainbow glow in next queue
-                        if (type === 'BUSTER') {
-                            const hue = (Date.now() / 10 + x * 30 + y * 30) % 360;
-                            ctx.fillStyle = `hsl(${hue}, 100%, 70%)`;
-                            // No shadowBlur for performance
-                        } else {
-                            ctx.fillStyle = COLORS[type];
-                            ctx.shadowBlur = 0;
-                        }
-                        ctx.fillRect(x * 20 + 10, y * 20 + i * 80 + 20, 18, 18);
-                        ctx.strokeStyle = type === 'BUSTER' ? '#fff' : '#000';
-                        ctx.strokeRect(x * 20 + 10, y * 20 + i * 80 + 20, 18, 18);
+                    if (value === 0) return;
+                    const px = x * cell + 10;
+                    const py = y * cell + i * 80 + 20;
+                    if (type === 'BUSTER') {
+                        const hue = (Date.now() / 10 + x * 30 + y * 30) % 360;
+                        this.drawBeveledCube(ctx, px, py, cell - 2, `hsl(${hue}, 100%, 60%)`);
+                    } else {
+                        this.drawBeveledCube(ctx, px, py, cell - 2, COLORS[type]);
                     }
                 });
             });
-
-            // Reset shadow after BUSTER
-            ctx.shadowBlur = 0;
         });
     }
 
@@ -646,100 +687,114 @@ export class TetrisEngine {
         const ctx = this.holdCanvas.getContext('2d');
         ctx.clearRect(0, 0, this.holdCanvas.width, this.holdCanvas.height);
         const matrix = PIECES[this.holdPiece];
+        if (!matrix) return;
+        const cell = 20;
+
         matrix.forEach((row, y) => {
             row.forEach((value, x) => {
-                if (value !== 0) {
-                    ctx.fillStyle = COLORS[this.holdPiece];
-                    ctx.fillRect(x * 20 + 10, y * 20 + 20, 18, 18);
-                    ctx.strokeStyle = '#000';
-                    ctx.strokeRect(x * 20 + 10, y * 20 + 20, 18, 18);
-                }
+                if (value === 0) return;
+                this.drawBeveledCube(
+                    ctx,
+                    x * cell + 10, y * cell + 20,
+                    cell - 2,
+                    COLORS[this.holdPiece]
+                );
             });
         });
     }
 
+    // Shared beveled-cube renderer. Works for any base color (hex, hsl)
+    // because the highlight/shadow are rgba overlays that don't need to know
+    // the source color space. Used by both the main board (BLOCK_SIZE) and
+    // the NEXT/HOLD previews (smaller size).
+    drawBeveledCube(ctx, px, py, size, baseColor) {
+        const bevel = Math.max(2, Math.floor(size / 10));
+
+        // Main fill
+        ctx.fillStyle = baseColor;
+        ctx.fillRect(px, py, size, size);
+
+        // Glossy curved highlight: a vertical white-to-transparent gradient
+        // centered on the upper third gives the cube a soft sheen instead
+        // of a flat top-left rectangle. Cheap (1 gradient per block) and
+        // adds a lot of perceived depth.
+        const gloss = ctx.createLinearGradient(px, py, px, py + size);
+        gloss.addColorStop(0,    'rgba(255, 255, 255, 0.38)');
+        gloss.addColorStop(0.45, 'rgba(255, 255, 255, 0.05)');
+        gloss.addColorStop(0.55, 'rgba(0, 0, 0, 0)');
+        gloss.addColorStop(1,    'rgba(0, 0, 0, 0.30)');
+        ctx.fillStyle = gloss;
+        ctx.fillRect(px, py, size, size);
+
+        // Crisp top + left edge highlight to keep the bevel "lip" reading
+        // even with the gloss in place.
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.fillRect(px, py, size, 1);
+        ctx.fillRect(px, py, 1, size);
+
+        // Bottom + right shadow edge.
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillRect(px, py + size - 1, size, 1);
+        ctx.fillRect(px + size - 1, py, 1, size);
+
+        // Inner bevel band (the chunky rim) - top/left lighter, bot/right darker
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fillRect(px + 1, py + 1, size - 2, bevel - 1);
+        ctx.fillRect(px + 1, py + 1, bevel - 1, size - 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.fillRect(px + 1, py + size - bevel, size - 2, bevel - 1);
+        ctx.fillRect(px + size - bevel, py + 1, bevel - 1, size - 2);
+
+        // Crisp 1px keyline so adjacent blocks read as separate cubes
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px + 0.5, py + 0.5, size - 1, size - 1);
+    }
+
     drawBlock(ctx, x, y, type) {
-        // Special rendering for BUSTER blocks - rainbow glow effect (no shadowBlur for performance)
+        const px = x * BLOCK_SIZE;
+        const py = y * BLOCK_SIZE;
+
+        // BUSTER: rainbow cube. Uses the bevel renderer with a time-cycling hue.
         if (type === 'BUSTER') {
-            // Rainbow color cycling based on time
             const hue = (Date.now() / 10) % 360;
-            const rainbowColor = `hsl(${hue}, 100%, 60%)`;
-
-            // Rainbow fill
-            ctx.fillStyle = rainbowColor;
-            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-
-            // Inner lighter fill
-            ctx.fillStyle = `hsl(${hue}, 80%, 80%)`;
-            ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 4, BLOCK_SIZE - 8, BLOCK_SIZE - 8);
-
-            // Rainbow border
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x * BLOCK_SIZE + 1, y * BLOCK_SIZE + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
-
-            // Draw rainbow emoji
+            this.drawBeveledCube(ctx, px, py, BLOCK_SIZE, `hsl(${hue}, 100%, 55%)`);
             ctx.font = '20px Arial';
-            ctx.fillText('🌈', x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 26);
+            ctx.fillText('🌈', px + 8, py + 26);
             return;
         }
 
-
-
-        ctx.fillStyle = COLORS[type] || '#ff00ff';
-        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-        ctx.strokeStyle = '#000';
-        ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-
-        // Special rendering for BOMB blocks
+        // BOMB: red-tinted cube + emoji + countdown.
         if (type === 'BOMB' || type === 'B') {
             const timeRemaining = this.getBombTimeRemaining();
             const isUrgent = timeRemaining !== null && timeRemaining <= 2;
+            const pulsing = isUrgent && Math.floor(Date.now() / 200) % 2 === 0;
+            const baseColor = pulsing ? '#ff3030' : COLORS['BOMB'];
+            this.drawBeveledCube(ctx, px, py, BLOCK_SIZE, baseColor);
 
-            // Pulsing effect when urgent
-            if (isUrgent && Math.floor(Date.now() / 200) % 2 === 0) {
-                ctx.fillStyle = '#ff0000';
-                ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-            }
-
-            // Draw bomb emoji with lit fuse
             ctx.font = '24px Arial';
-            ctx.fillText('💣', x * BLOCK_SIZE + 6, y * BLOCK_SIZE + 28);
+            ctx.fillText('💣', px + 6, py + 28);
 
-            // Draw countdown timer
             if (timeRemaining !== null) {
                 ctx.font = 'bold 14px Arial';
-                ctx.fillStyle = isUrgent ? '#ff0000' : '#fff';
+                ctx.fillStyle = isUrgent ? '#ff3030' : '#fff';
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 2;
-                ctx.strokeText(timeRemaining + 's', x * BLOCK_SIZE + 24, y * BLOCK_SIZE + 12);
-                ctx.fillText(timeRemaining + 's', x * BLOCK_SIZE + 24, y * BLOCK_SIZE + 12);
+                ctx.strokeText(timeRemaining + 's', px + 24, py + 12);
+                ctx.fillText(timeRemaining + 's', px + 24, py + 12);
             }
+            return;
         }
 
-        // Special rendering for BUSTER blocks - rainbow glow effect (no shadowBlur for performance)
-        if (type === 'BUSTER') {
-            // Rainbow color cycling based on time
-            const hue = (Date.now() / 10) % 360;
-            const rainbowColor = `hsl(${hue}, 100%, 60%)`;
-
-            // Rainbow fill instead of shadow
-            ctx.fillStyle = rainbowColor;
-            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-
-            // Inner lighter fill
-            ctx.fillStyle = `hsl(${hue}, 80%, 80%)`;
-            ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 4, BLOCK_SIZE - 8, BLOCK_SIZE - 8);
-
-            // Rainbow border
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x * BLOCK_SIZE + 1, y * BLOCK_SIZE + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
-
-            // Draw rainbow emoji
-            ctx.font = '20px Arial';
-            ctx.fillText('🌈', x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 26);
+        // Garbage block: muted slate, but still beveled so the playfield reads
+        // as cubes even where the opponent has buried you.
+        if (type === 'G') {
+            this.drawBeveledCube(ctx, px, py, BLOCK_SIZE, '#555a66');
+            return;
         }
+
+        // Regular tetromino
+        this.drawBeveledCube(ctx, px, py, BLOCK_SIZE, COLORS[type] || '#ff00ff');
     }
 
     render() {
@@ -759,7 +814,7 @@ export class TetrisEngine {
         // Safety: Need a valid piece to draw ghost/piece
         if (!this.currentPiece || (!PIECES[this.currentPiece] && this.currentPiece !== 'BUSTER')) return;
 
-        // Draw Ghost
+        // Draw Ghost (skipped when settings disable it)
         const ghostY = this.pos.y;
 
         try {
@@ -773,13 +828,16 @@ export class TetrisEngine {
             this.pos.y = originalY; // Restore
 
             const matrix = this.getRotatedMatrix(this.currentPiece, this.rotation);
-            this.ctx.globalAlpha = 0.25; // Slightly more visible
-            matrix.forEach((row, y) => {
-                row.forEach((value, x) => {
-                    if (value !== 0) this.drawBlock(this.ctx, this.pos.x + x, finalGhostY + y, this.currentPiece);
+
+            if (this.showGhost) {
+                this.ctx.globalAlpha = 0.25;
+                matrix.forEach((row, y) => {
+                    row.forEach((value, x) => {
+                        if (value !== 0) this.drawBlock(this.ctx, this.pos.x + x, finalGhostY + y, this.currentPiece);
+                    });
                 });
-            });
-            this.ctx.globalAlpha = 1.0;
+                this.ctx.globalAlpha = 1.0;
+            }
 
             // Draw Current Piece
             matrix.forEach((row, y) => {

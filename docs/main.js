@@ -1,7 +1,21 @@
-import { TetrisEngine } from './tetris.js'; // Corrected Import
+import { TetrisEngine } from './tetris.js';
 import { BattleManager } from './battle.js';
-import { ArcadeManager } from './arcade_effects.js?v=3'; // Cache Busting
+import { ArcadeManager } from './arcade_effects.js';
 import { P2PHandler } from './p2p.js';
+import * as cfg from './config.js';
+import {
+    shakeSide,
+    flashScreen,
+    playShieldFX,
+    playShieldBlockedFX,
+    playLightningFX,
+    playBombFlyFX,
+    playBusterFX,
+    animateNumber,
+} from './vfx.js';
+import * as hud from './hud.js';
+import { createControls } from './controls.js';
+import { settings, setSetting, resetSettings, onSettingChange } from './settings.js';
 
 let fb = null; // Will be initialized when P2P connection is established
 const arcade = new ArcadeManager();
@@ -20,36 +34,36 @@ function gameLoop() {
     const now = Date.now();
     const elapsed = now - startTime;
 
-    // Timer UI (Count UP)
-    const mins = Math.floor(elapsed / 60000);
-    const secs = Math.floor((elapsed % 60000) / 1000);
-    document.getElementById('timer').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    // Timer UI (Count DOWN from MATCH_DURATION_MS)
+    const remaining = Math.max(0, cfg.MATCH_DURATION_MS - elapsed);
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    const timerEl = document.getElementById('timer');
+    timerEl.innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    // Last 10s: red urgency tint
+    timerEl.style.color = (remaining <= 10000) ? '#ff3333' : '#e74c3c';
+
+    // Time up - end the match if it hasn't already ended.
+    if (remaining <= 0 && matchActive) {
+        endMatchOnTime();
+        return;
+    }
 
     // Level & Speed Logic - Faster progression for intense battles (based on Tetris 99 research)
-    const level = Math.floor(elapsed / 15000) + 1; // 15s Levels (faster than before)
+    const level = Math.floor(elapsed / 15000) + 1; // 15s Levels
 
-    // START DRUMS - DISABLED for MP3 Mode
-    // if (level >= 2) { arcade.setDrums(true); } else { arcade.setDrums(false); }
-    arcade.setDrums(false);
-
-    // Speed: 1200ms start, decrease 50ms per level, min 180ms (reaches max speed at ~5 mins)
+    // Speed: 1200ms start, decrease 50ms per level, min 180ms (max speed at ~5 mins)
     let targetSpeed = Math.max(180, 1200 - ((level - 1) * 50));
 
-    // Music Tempo Sync (MP3 Speed)
-    // Safeguard: Ensure level is valid before setting tempo
+    // MP3 tempo sync: gentle 2%-per-level speedup
     if (!isNaN(level) && level > 0) {
-        // arcade.setTempoScale(1 + ((level - 1) * 0.05)); // Old Synth
-        arcade.setMusicSpeed(1 + ((level - 1) * 0.02)); // New MP3 (Slower/Gradual: 2% per level)
+        arcade.setMusicSpeed(1 + ((level - 1) * 0.02));
     }
 
-    // Stats UI (Score)
-    if (myScoreId) document.getElementById(myScoreId).innerText = score;
-
-    // Power-up check (Rush Override)
-    if (p1Battle.finalRushActive) {
-        targetSpeed = 300; // FASTEST (Fixed for Rush)
-        document.getElementById('p1-rush-btn').classList.add('active'); // Visual
-    }
+    // Stats UI (Score) - the animated tween handles smoothness; gameLoop
+    // calls happen ~60Hz so this is just keeping the displayed value in sync
+    // when nothing else changed it.
+    if (myScoreId) animateNumber(myScoreId, score);
 
     currentSpeed = targetSpeed;
 
@@ -74,13 +88,10 @@ window.arcade = arcade; // Expose for debugging
 
 window.addEventListener('load', () => {
     try {
-        console.log("Initializing Arcade Manager...");
-
         // Auto-init audio on first user interaction (no click-to-start screen)
         let audioInitialized = false;
         document.addEventListener('click', () => {
             if (!audioInitialized) {
-                console.log("First click detected. Unlocking audio...");
                 arcade.initAudio();
                 arcade.resumeAudio();
                 audioInitialized = true;
@@ -101,36 +112,37 @@ window.addEventListener('load', () => {
             });
         }
 
-        // Volume Sliders (In-Game)
+        // In-game volume sliders mirror the settings panel - both update
+        // the same `settings.musicVol` / `settings.sfxVol` so the values
+        // stay synced. The arcade audio gains follow via onSettingChange.
         const musicSlider = document.getElementById('music-slider');
         if (musicSlider) {
+            musicSlider.value = settings.musicVol;
+            arcade.setMusicVolume(settings.musicVol);
             musicSlider.addEventListener('input', (e) => {
-                arcade.setMusicVolume(e.target.value);
+                setSetting('musicVol', parseFloat(e.target.value));
             });
         }
 
         const sfxSlider = document.getElementById('sfx-slider');
         if (sfxSlider) {
+            sfxSlider.value = settings.sfxVol;
+            arcade.setSfxVolume(settings.sfxVol);
             sfxSlider.addEventListener('input', (e) => {
-                arcade.setSfxVolume(e.target.value);
+                setSetting('sfxVol', parseFloat(e.target.value));
             });
         }
-        // Note: Music toggle is already handled above
 
         // Music Toggle (In-Game)
         const inGameMusicBtn = document.getElementById('ingame-music-toggle');
         if (inGameMusicBtn) {
-            console.log("Mute button found, attaching listener...");
             inGameMusicBtn.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent event bubbling
-                console.log("Mute button clicked!");
                 const isPlaying = arcade.toggleMusic();
                 inGameMusicBtn.innerText = isPlaying ? "🔊" : "🔇";
                 if (isPlaying) arcade.playClickSound();
                 inGameMusicBtn.blur(); // Remove focus so spacebar doesn't trigger it
             });
-        } else {
-            console.warn("Mute button NOT found!");
         }
 
     } catch (e) {
@@ -139,12 +151,9 @@ window.addEventListener('load', () => {
     }
 });
 
-console.log("Main script loaded");
-
 let p1, p2, p1Battle;
 let matchActive = false;
 let startTime;
-const MATCH_DURATION = 120000; // 2 minutes
 
 // Game State Globals
 let score = 0;
@@ -161,25 +170,67 @@ let pauseStartTime = 0;
 let gameInitialized = false;
 let resultRecorded = false; // Prevent duplicate win/loss recording
 
+// A full no-op mock so Solo mode can run all the same code paths as P2P.
+// Every method the rest of the code calls is present and returns sensibly.
+function createSoloMock() {
+    const stats = { name: 'Solo', wins: 0, losses: 0, pb: 0 };
+    const noop = () => { };
+    const asyncNoop = async () => { };
+    const cleanup = () => { };
+    return {
+        userId: 'Solo',
+        opponentId: null,
+        isHost: false,
+        connected: false,
+        stats,
+        opponentStats: null,
+        // lifecycle
+        initPlayer: async () => stats,
+        setOnline: noop,
+        destroy: noop,
+        // outgoing
+        sendGameState: asyncNoop,
+        sendAttack: asyncNoop,
+        sendBomb: asyncNoop,
+        sendStats: noop,
+        // listeners (return cleanup so callers can compose without breaking)
+        listenToMatchStart: () => cleanup,
+        listenToMatch: () => cleanup,
+        listenToAttacks: () => cleanup,
+        listenToBombs: () => cleanup,
+        listenToOnline: () => cleanup,
+        listenToReadyStatus: () => cleanup,
+        listenToOpponentStats: () => cleanup,
+        listenToRematch: () => cleanup,
+        listenToPause: (cb) => { cb({ paused: false, pausedBy: null, pausedAt: null, canUnpause: true }); return cleanup; },
+        // ready / pause / rematch
+        setReady: noop,
+        clearReadyForPlayer: noop,
+        setPause: (paused) => applyLocalPause(paused, true),
+        setRematch: noop,
+        triggerMatchStart: async () => Date.now() + 3000,
+        // stats
+        recordWin: () => { stats.wins++; },
+        recordLoss: () => { stats.losses++; },
+        resetStats: () => { stats.wins = 0; stats.losses = 0; },
+        updatePB: async (score) => { if (score > stats.pb) stats.pb = score; }
+    };
+}
+
 async function initGame(userId) {
     if (gameInitialized) return;
     gameInitialized = true;
-    console.log("Initializing game for", userId);
 
-    // P2P handler should already be initialized during connection
-    // For solo mode, create a mock handler
+    // For solo mode, create a mock handler if one wasn't already attached.
     if (userId === "Solo" && !fb) {
-        fb = { userId: "Solo", sendGameState: () => { }, sendAttack: () => { }, sendBomb: () => { }, setPause: () => { } };
+        fb = createSoloMock();
     }
-    console.log("Starting P2P Mode with user:", userId);
 
     try {
         let stats;
 
         // Use the mock handler's init (which is instant)
         stats = await fb.initPlayer(userId);
-
-        console.log("Player stats loaded:", stats);
 
         // Initialize match with a PROPER empty grid (20 rows x 12 cols)
         const emptyGrid = Array.from({ length: 20 }, () => Array(12).fill(0));
@@ -254,15 +305,21 @@ async function initGame(userId) {
 
         // p1 variable acts as the LOCAL ENGINE (Your Inputs)
         p1 = new TetrisEngine(localCanvas, localNext, localHold);
+        p1.showGhost = settings.ghostPiece;
         p1Battle = new BattleManager(p1, userId === 'Lifedelinquent' || userId === 'Solo');
         p1Battle.onShieldUsed = () => updatePowerUpUI(); // Update UI when shield is consumed
 
-        // p2 variable acts as the REMOTE ENGINE (Network Updates)
+        // Wire power-up button click handlers for the local side only.
+        setupPowerUpButton(myButtonPrefix);
+
+        // p2 variable acts as the REMOTE ENGINE (Network Updates).
+        // Hide ghost on opponent regardless of setting - their ghost is
+        // not actually meaningful since we only render their broadcast grid.
         p2 = new TetrisEngine(remoteCanvas, remoteNext);
+        p2.showGhost = false;
 
         // --- Presence & Match Start Logic ---
         if (userId === "Solo") {
-            console.log("Solo Mode: Starting immediately...");
             // Immediate Start
             startCountdown(Date.now() + 3000);
             return; // EXIT initGame, skip network listeners
@@ -273,7 +330,6 @@ async function initGame(userId) {
 
         // 2. Listen for the Start Signal (Handles BOTH players)
         fb.listenToMatchStart((timestamp) => {
-            console.log("Match Start Signal Received via Network:", new Date(timestamp));
             startCountdown(timestamp);
         });
 
@@ -289,16 +345,11 @@ async function initGame(userId) {
         // Listen continuously. The handler dedupes by timestamp.
         fb.listenToOnline(opponentId, async (isOnline) => {
             if (isOnline) {
-                console.log("Opponent Detected (New Session/Refresh)!");
-
                 // Host Authority: Only Lifedelinquent triggers the start
                 if (userId === "Lifedelinquent") {
-                    console.log("I am Host. Triggering/Restaring Match...");
                     try {
                         await fb.triggerMatchStart();
                     } catch (e) { console.error("Trigger Start Failed", e); }
-                } else {
-                    console.log("I am Guest. Waiting for Host...");
                 }
             }
         });
@@ -359,10 +410,15 @@ async function initGame(userId) {
                         const p = oppState.activePiece;
                         // Only trigger win if explicitly game_over === true (not just truthy/undefined)
                         if (p.game_over === true) {
-                            console.log("Opponent sent game_over signal!");
                             if (matchActive && !resultRecorded) {
                                 resultRecorded = true; // Prevent double recording
-                                // Record the win locally
+                                // Record the win locally + bump session KO and reflect it in the HUD
+                                if (p1Battle) {
+                                    p1Battle.koCount++;
+                                    const myKoId = userId === "Lifedelinquent" ? 'p1-ko' : 'p2-ko';
+                                    const myKoEl = document.getElementById(myKoId);
+                                    if (myKoEl) myKoEl.innerText = p1Battle.koCount;
+                                }
                                 if (fb && fb.recordWin) {
                                     fb.recordWin();
                                 }
@@ -379,8 +435,10 @@ async function initGame(userId) {
                                 p2.score = p.score;
                                 updateAvatar();
                             }
-                            // Lines Sent (Attack Score)
+                            // Lines Sent (Attack Score) - kept on p2 so the time-up
+                            // tie-break has authoritative opponent data.
                             if (p.linesSent !== undefined) {
+                                p2.linesSent = p.linesSent;
                                 const targetId = userId === "Lifedelinquent" ? 'p2-lines-sent' : 'p1-lines-sent';
                                 const el = document.getElementById(targetId);
                                 if (el) el.innerText = p.linesSent;
@@ -429,23 +487,35 @@ function startCountdown(targetStartTime) {
     // Reset Game State - only if p1 already exists (rematch scenario)
     // For first game start, initGame already set up p1
     if (p1 && p1.canvas) {
+        const carriedKoCount = p1Battle ? p1Battle.koCount : 0;
         p1 = new TetrisEngine(p1.canvas, p1.nextCanvas, p1.holdCanvas);
+        p1.showGhost = settings.ghostPiece;
         p1Battle = new BattleManager(p1, myButtonPrefix === 'p1');
+        p1Battle.koCount = carriedKoCount; // Persist session KOs across rematches
         p1Battle.onShieldUsed = () => updatePowerUpUI(); // Update UI when shield is consumed
         p1Battle.setupBombDetonation(); // Re-register bomb detonation callback
     }
 
     score = 0; // RESET SCORE!
-    document.getElementById('p1-pb').innerText = "0"; // Reset UI immediately
+    // Clear both score displays + their tween targets so animateNumber
+    // doesn't think the prior score is still pending.
+    ['p1-pb', 'p2-pb'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = '0';
+            el.dataset.target = '0';
+        }
+    });
 
     // Reset power-up UI (removes old highlights)
     updatePowerUpUI();
 
-    // Reset lines-sent display for both players
+    // Reset lines-sent display + state for both players (used by time tie-break)
     const p1SentEl = document.getElementById('p1-lines-sent');
     const p2SentEl = document.getElementById('p2-lines-sent');
     if (p1SentEl) p1SentEl.innerText = '0';
     if (p2SentEl) p2SentEl.innerText = '0';
+    if (p2) p2.linesSent = 0;
 
     // Broadcast Empty State to Opponent immediately
     // This ensures they see us as empty even if they joined late or have old data
@@ -467,13 +537,17 @@ function startCountdown(targetStartTime) {
     const text = document.getElementById('countdown-text');
     overlay.classList.remove('hidden');
 
+    let lastDiff = null;
     const interval = setInterval(() => {
         const now = Date.now();
         const diff = Math.ceil((targetStartTime - now) / 1000);
 
         if (diff > 0) {
-            text.innerText = diff;
-            arcade.playSoftBeep(); // Beep on count
+            if (diff !== lastDiff) {
+                text.innerText = diff;
+                arcade.playSoftBeep(); // Beep on count
+                lastDiff = diff;
+            }
         } else {
             clearInterval(interval);
             text.innerText = "GO!";
@@ -495,11 +569,22 @@ function startCountdown(targetStartTime) {
 }
 
 // Helper: Handle Piece Lock (Scoring & Attacks)
-function handleLock(result) {
+function handleLock(result, isTSpin = false) {
     if (!result.locked) return;
 
     // Scoring: Landing = 25
     score += 25;
+
+    // Hard drop bonus: +2 per cell fallen. Pop a "+N" near the player's
+    // attack box so the reward is visible.
+    if (result.wasHardDrop && result.cellsDropped > 0) {
+        const hardBonus = result.cellsDropped * 2;
+        score += hardBonus;
+        if (window.arcade) {
+            const x = p1Battle.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+            window.arcade.createFloatingText(`+${hardBonus}`, x, window.innerHeight * 0.55, '#FFD700');
+        }
+    }
 
     // Scoring: Standard Tetris (100, 300, 500, 800)
     if (result.linesCleared === 1) score += 100;
@@ -514,42 +599,74 @@ function handleLock(result) {
             updatePowerUpUI();
         }
 
+        // Visual punctuation scaled to clear size
+        if (result.linesCleared === 4) {
+            // TETRIS - heavy shake + yellow flash
+            shakeSide(myButtonPrefix, 'heavy');
+            flashScreen('tetris');
+        } else if (result.linesCleared === 3) {
+            shakeSide(myButtonPrefix, 'light');
+        }
+
+        // T-spin feedback - distinct text per kind, sting plays in #9.
+        if (isTSpin === 'full' || isTSpin === 'mini') {
+            const x = p1Battle.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+            const text = isTSpin === 'mini' ? 'T-SPIN MINI' : 'T-SPIN!';
+            const color = isTSpin === 'mini' ? '#ffffff' : '#FFD700';
+            arcade.createFloatingText(text, x, window.innerHeight * 0.42, color);
+            if (arcade.playTSpin) arcade.playTSpin();
+            shakeSide(myButtonPrefix, isTSpin === 'full' ? 'heavy' : 'light');
+            flashScreen('tspin');
+        }
+
         // If bomb was defused, clear the bomb timer
         if (result.bombDefused && p1Battle) {
-            p1Battle.bombExpiresAt = null;
-            console.log('Bomb defused - timer cleared!');
+            p1Battle.bombRemainingMs = null;
+            p1Battle._lastBombTickTime = 0;
         }
+    } else if (result.wasHardDrop) {
+        // Slam SFX is louder than a gravity-driven settle.
+        (arcade.playHardDrop || arcade.playLand).call(arcade);
     } else {
         arcade.playLand();
     }
 
-    const isTSpin = p1.isTSpin(); // Note: Check T-Spin BEFORE drop? 
-    // Actually drop() inside tetris.js already spawned new piece, so isTSpin might be wrong?
-    // Wait, p1.isTSpin() checks current pos. 
-    // If drop() spawns new piece, p1.pos resets. 
-    // FIXED: TetrisEngine needs to return TSpin status or we check before?
-    // In tick(), isTSpin was calculated BEFORE p1.drop().
-    // We need to pass isTSpin into handleLock or move it.
-    // Let's rely on the caller to pass isTSpin if needed, or simplfy.
-    // For now, let's just make handleLock take (result, isTSpin).
+    // Color Buster handling: refund the cost on a fizzle, treat a productive
+    // bust as a "clear" for combo purposes (no row clear, no attack).
+    if (result.busterResult) {
+        if (!result.busterResult.busted) {
+            p1Battle.refundColorBuster();
+            updatePowerUpUI();
+        }
+        // else: combo is preserved by skipping the calculateAttack reset path below
+    }
 
-    if (myScoreId) document.getElementById(myScoreId).innerText = score;
+    // Lock-time score update gets the celebratory pop on big jumps.
+    if (myScoreId) animateNumber(myScoreId, score, { pop: true });
     updateAvatar();
 
-    // Counter System: Lines cleared reduce pending garbage first
-    // Then remaining lines become attack
-    let attackLines = p1Battle.calculateAttack(result.linesCleared, arguments[1] || false);
-
-    // Counter pending garbage with lines cleared
-    if (result.linesCleared > 0) {
-        const remainingForAttack = p1Battle.counterGarbage(result.linesCleared);
-        // Scale attack based on how many lines actually used for attack (not countered)
-        if (remainingForAttack < result.linesCleared) {
-            // Some lines were used for countering, reduce attack proportionally
-            const counterRatio = remainingForAttack / result.linesCleared;
-            attackLines = Math.floor(attackLines * counterRatio);
-        }
+    // Compute raw attack (combo + B2B + T-Spin bonuses) from this clear,
+    // then counter pending garbage 1:1 against the attack.
+    // A successful buster preserves combo without sending attack.
+    let rawAttack = 0;
+    if (result.busterResult && result.busterResult.busted) {
+        // No-op: keep combo state, no attack
+    } else {
+        rawAttack = p1Battle.calculateAttack(result.linesCleared, isTSpin);
     }
+
+    // All-Clear (Perfect Clear): if the clear emptied the board entirely,
+    // award a fixed +6 attack and play a dramatic flourish.
+    if (result.linesCleared > 0 && p1.grid.every(row => row.every(cell => cell === 0))) {
+        rawAttack += 6;
+        const x = p1Battle.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+        arcade.createFloatingText("✨ ALL CLEAR ✨", x, window.innerHeight * 0.35, '#FFD700');
+        if (arcade.playAllClear) arcade.playAllClear();
+        flashScreen('allclear');
+        shakeSide(myButtonPrefix, 'heavy');
+    }
+
+    const attackLines = p1Battle.counterAttack(rawAttack);
 
     // Send attack to opponent
     if (attackLines > 0 && fb.userId !== "Solo") {
@@ -566,13 +683,7 @@ function handleLock(result) {
 
     // Update State (New Piece)
     if (fb.userId !== "Solo") {
-        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, {
-            type: p1.currentPiece,
-            pos: p1.pos,
-            rotation: p1.rotation,
-            score: score,
-            linesSent: p1Battle.linesSent
-        });
+        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, buildActivePiecePayload());
     }
 
     // Game Over Check
@@ -581,14 +692,40 @@ function handleLock(result) {
     }
 }
 
+// VFX helpers live in vfx.js (shakeSide, flashScreen, playShieldFX, ...).
+// We re-export a few onto window so cross-module callers (battle.js) can
+// reach them without setting up an import graph.
+window.shakeSide = shakeSide;
+window.flashScreen = flashScreen;
+window.playShieldFX = playShieldFX;
+window.playShieldBlockedFX = playShieldBlockedFX;
+window.playLightningFX = playLightningFX;
+window.playBombFlyFX = playBombFlyFX;
+window.playBusterFX = playBusterFX;
+
+// Build the activePiece payload broadcast to the opponent.
+// Always include `linesSent` so the opponent's attack counter stays current.
+function buildActivePiecePayload() {
+    return {
+        type: p1.currentPiece,
+        pos: p1.pos,
+        rotation: p1.rotation,
+        score: score,
+        linesSent: p1Battle ? p1Battle.linesSent : 0
+    };
+}
+
 // Main Game Loop (Gravity)
 let lastTickTime = 0;
 
 function tick() {
     if (!matchActive || isPaused) return;
 
-    // Check bomb timers (only runs when game is active, not paused)
-    if (p1Battle) p1Battle.updateBombs();
+    // Tick-driven timers (only run while active and unpaused).
+    if (p1Battle) {
+        p1Battle.updateBombs();
+        p1Battle.updateDoT();
+    }
 
     const now = Date.now();
     if (lastTickTime === 0) lastTickTime = now;
@@ -601,40 +738,34 @@ function tick() {
         lastTickTime = now - delta;
     }
 
-    // Accumulator: While enough time has passed for at least one drop...
+    // Accumulator: while enough time has passed, attempt a gravity step.
     while (delta >= currentSpeed) {
+        const dropResult = p1.drop();
 
-        // --- Single Tick Logic ---
-        const isTSpin = p1.isTSpin();
-        const result = p1.drop();
-
-        // Broadcast Movement (if falling)
-        // Optimization check: broadcast every tick? Or only if state changed significantly?
-        // Let's keep broadcasting for smooth view, but maybe limit rate?
-        // Actually, broadcast is lightweight.
-        if (!result.locked && fb.userId !== "Solo") {
-            fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.garbageQueue, {
-                type: p1.currentPiece,
-                pos: p1.pos,
-                rotation: p1.rotation,
-                score: score
-            });
+        if (dropResult.dropped) {
+            // Still falling: broadcast and clear any stale grounded state.
+            p1.groundedAtMs = null;
+            if (fb.userId !== "Solo") {
+                fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, buildActivePiecePayload());
+            }
+        } else {
+            // Touching the floor - start the lock-delay timer if it isn't already.
+            if (p1.groundedAtMs === null) p1.groundedAtMs = performance.now();
         }
 
-        handleLock(result, isTSpin);
+        delta -= currentSpeed;
+        lastTickTime += currentSpeed;
+    }
 
+    // Independent of gravity: if the lock-delay timer has elapsed, lock now.
+    if (matchActive && p1.shouldLock(performance.now(), settings.lockDelayMs)) {
+        const isTSpin = p1.isTSpin();
+        const lockResult = p1.lockPiece();
+        handleLock(lockResult, isTSpin);
         if (p1.gameOver) {
             handleGameOver(true);
             return;
         }
-        // -------------------------
-
-        delta -= currentSpeed;
-        lastTickTime += currentSpeed;
-
-        // If we locked, maybe break catch-up to allow visual delay? 
-        // Standard tetris usually continues or has "Are" delay.
-        // For simple web tetris, continuing is fine, makes it fast in late game.
     }
 
     // Schedule next check
@@ -649,33 +780,60 @@ function tick() {
 function handleGameOver(toppedOut) {
     matchActive = false;
     clearTimeout(tickTimeout);
-
-    // Stop Game Music - game over music will handle transition to lobby music
+    controls.clearHeldKeys(); // no phantom auto-repeat into the next match
     arcade.stopBattleMusic();
-
-    // Logic: If I topped out, I lose.
-    // If time ran out, compare scores? Or just Draw?
-    // User Request: "when one player... gets to top he loses so KO goto other player"
 
     let result = "DRAW";
     if (toppedOut && !resultRecorded) {
-        resultRecorded = true; // Prevent double recording
+        resultRecorded = true;
         result = "LOSE";
-        // Record the loss locally
-        if (fb && fb.recordLoss) {
-            fb.recordLoss();
-        }
-        // Notify Opponent I lost? 
-        // Opponent needs to know to show "WIN".
-        // simple way: set KO to Opponent locally?
-        // Better: Send a "I DIED" signal?
-        // We already send "ko" count.
-        // Wait, "KO goto other player" means Opponent gets a point. 
-
-        // Let's send a special 'game_over' state or just rely on manual "I Lost" logic overlay.
-        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.garbageQueue, { game_over: true });
+        if (fb && fb.recordLoss) fb.recordLoss();
+        // Notify opponent so they record a WIN.
+        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, { game_over: true });
     }
 
+    showResultScreen(result);
+}
+
+// Time expired with neither player topped out. Compare attack-sent (linesSent)
+// for the tie-break: more attack = winner. Each side computes locally - both
+// have the same data via P2P broadcasts.
+function endMatchOnTime() {
+    matchActive = false;
+    clearTimeout(tickTimeout);
+    controls.clearHeldKeys();
+    arcade.stopBattleMusic();
+
+    if (resultRecorded) {
+        showResultScreen("DRAW");
+        return;
+    }
+    resultRecorded = true;
+
+    if (fb.userId === "Solo") {
+        showResultScreen("TIME UP");
+        return;
+    }
+
+    const myAttack = p1Battle ? p1Battle.linesSent : 0;
+    const oppAttack = (p2 && typeof p2.linesSent === 'number') ? p2.linesSent : 0;
+
+    let result;
+    if (myAttack > oppAttack) {
+        result = "WIN";
+        if (fb && fb.recordWin) fb.recordWin();
+        if (p1Battle) {
+            p1Battle.koCount++;
+            const myKoId = fb.userId === "Lifedelinquent" ? 'p1-ko' : 'p2-ko';
+            const myKoEl = document.getElementById(myKoId);
+            if (myKoEl) myKoEl.innerText = p1Battle.koCount;
+        }
+    } else if (myAttack < oppAttack) {
+        result = "LOSE";
+        if (fb && fb.recordLoss) fb.recordLoss();
+    } else {
+        result = "DRAW";
+    }
     showResultScreen(result);
 }
 
@@ -705,7 +863,6 @@ document.getElementById('restart-btn').onclick = () => {
 
     const cleanup = fb.listenToRematch(opponentId, async (bothReady) => {
         if (bothReady && !hasTriggeredRematch) {
-            console.log("Both Ready for Rematch!");
             hasTriggeredRematch = true; // Lock immediately
 
             // Reset Rematch Flags
@@ -740,161 +897,58 @@ document.getElementById('quit-btn').onclick = () => {
 
 function showResultScreen(result) {
     document.getElementById('winner-text').innerText = result;
+
+    // Populate the stats card from the local match's BattleManager.
+    populateStatsCard();
+
+    // Re-trigger the staggered row reveal (so rematches play it again too).
+    const card = document.getElementById('stats-card');
+    if (card) {
+        card.classList.remove('revealing');
+        void card.offsetWidth;
+        card.classList.add('revealing');
+    }
+
     document.getElementById('game-over-screen').classList.remove('hidden');
 
     // Play game over music (plays once, then starts lobby music)
     arcade.playGameOverMusic();
 }
 
+function populateStatsCard() {
+    hud.populateStatsCard({ battle: p1Battle, startTime, score });
+}
+
 function updatePowerUpUI() {
-    if (!p1Battle) return;
+    hud.updatePowerUpUI(p1Battle, myButtonPrefix);
+}
 
-    const status = p1Battle.getPowerUpStatus();
-
-    // Shield button
-    const shieldBtn = document.getElementById(`${myButtonPrefix}-shield-btn`);
-    if (shieldBtn) {
-        if (status.shield) {
-            shieldBtn.classList.add('ready');
-            shieldBtn.disabled = false;
-            shieldBtn.style.boxShadow = '0 0 15px #0DFF72, 0 0 30px #0DFF72';
-            shieldBtn.style.animation = 'pulse 1s infinite';
-        } else {
-            shieldBtn.classList.remove('ready');
-            shieldBtn.disabled = true;
-            shieldBtn.style.boxShadow = 'none';
-            shieldBtn.style.animation = 'none';
-        }
-        // If shield is active, show it visually
-        if (p1Battle.shieldActive) shieldBtn.classList.add('active');
-    }
-
-    // Lightning button
-    const rushBtn = document.getElementById(`${myButtonPrefix}-rush-btn`);
-    if (rushBtn) {
-        if (status.lightning) {
-            rushBtn.classList.add('ready');
-            rushBtn.disabled = false;
-            rushBtn.style.boxShadow = '0 0 15px #FFFF00, 0 0 30px #FFFF00';
-            rushBtn.style.animation = 'pulse 1s infinite';
-        } else {
-            rushBtn.classList.remove('ready');
-            rushBtn.disabled = true;
-            rushBtn.style.boxShadow = 'none';
-            rushBtn.style.animation = 'none';
-        }
-    }
-
-    // Bomb button
-    const twinBtn = document.getElementById(`${myButtonPrefix}-twin-btn`);
-    if (twinBtn) {
-        if (status.bomb) {
-            twinBtn.classList.add('ready');
-            twinBtn.disabled = false;
-            twinBtn.style.boxShadow = '0 0 15px #FF00FF, 0 0 30px #FF00FF';
-            twinBtn.style.animation = 'pulse 1s infinite';
-        } else {
-            twinBtn.classList.remove('ready');
-            twinBtn.disabled = true;
-            twinBtn.style.boxShadow = 'none';
-            twinBtn.style.animation = 'none';
-        }
-    }
-
-    // Color Buster button
-    const busterBtn = document.getElementById(`${myButtonPrefix}-buster-btn`);
-    if (busterBtn) {
-        if (status.colorBuster) {
-            busterBtn.classList.add('ready');
-            busterBtn.disabled = false;
-            busterBtn.style.boxShadow = '0 0 15px #FFFFFF, 0 0 30px #00FFFF, 0 0 45px #FF00FF';
-            busterBtn.style.animation = 'pulse 1s infinite';
-        } else {
-            busterBtn.classList.remove('ready');
-            busterBtn.disabled = true;
-            busterBtn.style.boxShadow = 'none';
-            busterBtn.style.animation = 'none';
-        }
+// Used by both the input layer and the gravity tick to push state to the
+// opponent. Lives in main.js because it touches several gameplay globals.
+function broadcastIfNetworked() {
+    if (fb && fb.userId !== "Solo") {
+        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, buildActivePiecePayload());
     }
 }
 
-// Controls
-window.addEventListener('keydown', (e) => {
-    if (!matchActive) return;
-
-    // Powerups Shortcuts
-    const k = e.key.toLowerCase();
-    if (k === 's') {
-        const btn = document.getElementById(`${myButtonPrefix}-shield-btn`);
-        if (btn) btn.click();
-    }
-    if (k === 'r') {
-        const btn = document.getElementById(`${myButtonPrefix}-rush-btn`);
-        if (btn) btn.click();
-    }
-    if (k === 'e') {
-        const btn = document.getElementById(`${myButtonPrefix}-twin-btn`);
-        if (btn) btn.click();
-    }
-    if (k === 'q') {
-        const btn = document.getElementById(`${myButtonPrefix}-buster-btn`);
-        if (btn) btn.click();
-    }
-
-    // Movement Logic
-    // Movement Logic
-    let changed = false;
-    let lockResult = null;
-    let tSpinCheck = false;
-
-    if (e.key === 'ArrowLeft') { p1.pos.x--; changed = true; }
-    if (e.key === 'ArrowRight') { p1.pos.x++; changed = true; }
-
-    if (e.key === 'ArrowDown') {
-        tSpinCheck = p1.isTSpin();
-        lockResult = p1.drop(); // Check lock
-        changed = true;
-    }
-
-    if (e.key === 'ArrowUp') {
-        p1.rotate(1);
-        changed = true;
-        arcade.playRotate();
-    }
-
-    if (e.key === ' ') {
-        tSpinCheck = p1.isTSpin();
-        lockResult = p1.hardDrop(); // Check lock
-        changed = true;
-    }
-
-    if (e.key === 'c' || e.key === 'C') { p1.hold(); changed = true; }
-
-    if (p1.collide() && e.key !== 'ArrowDown' && e.key !== ' ' && e.key !== 'ArrowUp') {
-        // ... (Revert code same as before)
-        if (e.key === 'ArrowLeft') p1.pos.x++;
-        if (e.key === 'ArrowRight') p1.pos.x--;
-    }
-
-    // Handle Manual Lock
-    if (lockResult && lockResult.locked) {
-        handleLock(lockResult, tSpinCheck);
-        // Don't need to broadcast here, handleLock does it
-        changed = false; // Prevent double broadcast below if we locked
-    }
-
-    // Broadcast State immediately on input for smooth ghosting (if NOT locked)
-
-    // Broadcast State immediately on input for smooth ghosting
-    if (changed && fb.userId !== "Solo") {
-        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.garbageQueue, {
-            type: p1.currentPiece,
-            pos: p1.pos,
-            rotation: p1.rotation,
-            score: score // Include score!
-        });
-    }
+// Input layer (DAS/ARR + key listeners) lives in controls.js. We wire it
+// here with getters/setters so it can read the latest game state without
+// needing a shared globals module.
+const controls = createControls({
+    arcade,
+    getEngine:        () => p1,
+    getBattle:        () => p1Battle,
+    isMatchActive:    () => matchActive,
+    isPaused:         () => isPaused,
+    getButtonPrefix:  () => myButtonPrefix,
+    getScoreId:       () => myScoreId,
+    addScore:         (n) => { score += n; },
+    getScore:         () => score,
+    broadcast:        broadcastIfNetworked,
+    onLock:           (r, ts) => handleLock(r, ts),
+    onGameOver:       (t) => handleGameOver(t),
 });
+controls.attachListeners();
 
 // Power-up Tooltip Logic
 const tooltip = document.getElementById('powerup-tooltip');
@@ -930,11 +984,11 @@ function setupPowerUpButton(prefix) {
     if (shieldBtn) {
         shieldBtn.onclick = () => {
             if (!p1Battle) return;
-            const result = p1Battle.usePowerUp('shield');
-            if (result) {
+            if (p1Battle.usePowerUp('shield')) {
                 shieldBtn.classList.add('active');
                 updatePowerUpUI();
-                arcade.playClickSound();
+                (arcade.playShieldUp || arcade.playClickSound).call(arcade);
+                playShieldFX(myButtonPrefix);
             }
         };
     }
@@ -942,10 +996,10 @@ function setupPowerUpButton(prefix) {
     if (rushBtn) {
         rushBtn.onclick = () => {
             if (!p1Battle) return;
-            const result = p1Battle.usePowerUp('rush');
-            if (result) {
+            if (p1Battle.usePowerUp('rush')) {
                 updatePowerUpUI();
-                arcade.playClickSound();
+                (arcade.playLightning || arcade.playClickSound).call(arcade);
+                playLightningFX(myButtonPrefix);
             }
         };
     }
@@ -959,11 +1013,12 @@ function setupPowerUpButton(prefix) {
                 const opponentId = fb.userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
                 fb.sendBomb(opponentId);
                 updatePowerUpUI();
-                arcade.playClickSound();
+                (arcade.playBombSent || arcade.playClickSound).call(arcade);
 
                 // Visual feedback for sender
                 const x = fb.userId === "Lifedelinquent" ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
                 arcade.createFloatingText("💣 BOMB SENT!", x, window.innerHeight * 0.4, '#ff00ff');
+                playBombFlyFX(myButtonPrefix);
             }
         };
     }
@@ -971,18 +1026,17 @@ function setupPowerUpButton(prefix) {
     if (busterBtn) {
         busterBtn.onclick = () => {
             if (!p1Battle) return;
-            const result = p1Battle.usePowerUp('colorBuster');
-            if (result) {
+            if (p1Battle.usePowerUp('colorBuster')) {
                 updatePowerUpUI();
-                arcade.playClickSound();
+                (arcade.playBuster || arcade.playClickSound).call(arcade);
+                playBusterFX(myButtonPrefix);
             }
         };
     }
 }
 
-// Set up handlers for both players' buttons
-setupPowerUpButton('p1');
-setupPowerUpButton('p2');
+// Power-up buttons are wired once we know which side is local.
+// `initGame` calls setupPowerUpButton(myButtonPrefix) - see initGame().
 
 // --- P2P CONNECTION SYSTEM ---
 let selectedUserId = null;
@@ -1001,13 +1055,11 @@ document.getElementById('create-room-btn').onclick = () => {
     fb.createRoom(
         // onReady - room created successfully
         (roomCode) => {
-            console.log("Room created:", roomCode);
             document.getElementById('room-code-display').innerText = roomCode;
             document.getElementById('create-room-panel').querySelector('h3').innerText = '📡 ROOM READY!';
         },
         // onConnect - opponent joined
         () => {
-            console.log("Opponent connected!");
             document.getElementById('host-status').innerText = '✓ Opponent Connected!';
             document.getElementById('host-status').style.color = '#0DFF72';
 
@@ -1068,7 +1120,6 @@ document.getElementById('confirm-join-btn').onclick = () => {
     fb.joinRoom(roomCode,
         // onConnect
         () => {
-            console.log("Connected to host!");
             document.getElementById('join-error').innerText = '✓ Connected!';
             document.getElementById('join-error').style.color = '#0DFF72';
 
@@ -1109,43 +1160,12 @@ document.getElementById('room-code-input').addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
 });
 
-// Update lobby records display - shows own stats from localStorage, opponent stats from P2P
 function updateLobbyRecords() {
-    const myStats = fb.stats;
-
-    const p1RecordEl = document.getElementById('lobby-p1-record');
-    const p2RecordEl = document.getElementById('lobby-p2-record');
-
-    // Display my stats on my side
-    if (fb.isHost) {
-        // I'm Lifedelinquent (host), show my stats on P1 side
-        if (p1RecordEl) {
-            p1RecordEl.innerText = `${myStats.wins || 0}W - ${myStats.losses || 0}L`;
-        }
-    } else {
-        // I'm ChronoKoala (guest), show my stats on P2 side
-        if (p2RecordEl) {
-            p2RecordEl.innerText = `${myStats.wins || 0}W - ${myStats.losses || 0}L`;
-        }
-    }
+    hud.updateLobbyRecords(fb);
 }
 
-// Update opponent's record display when we receive their stats
 function updateOpponentRecord(opponentStats) {
-    const p1RecordEl = document.getElementById('lobby-p1-record');
-    const p2RecordEl = document.getElementById('lobby-p2-record');
-
-    if (fb.isHost) {
-        // I'm host (Life), opponent is Chrono (P2 side)
-        if (p2RecordEl) {
-            p2RecordEl.innerText = `${opponentStats.wins}W - ${opponentStats.losses}L`;
-        }
-    } else {
-        // I'm guest (Chrono), opponent is Life (P1 side)
-        if (p1RecordEl) {
-            p1RecordEl.innerText = `${opponentStats.wins}W - ${opponentStats.losses}L`;
-        }
-    }
+    hud.updateOpponentRecord(fb, opponentStats);
 }
 
 // Setup P2P ready system after connection
@@ -1201,14 +1221,12 @@ function setupP2PReadySystem() {
         // If both ready, host triggers match start
         if (lifeReady && chronoReady && fb.isHost && !isP2PReady) {
             isP2PReady = true;
-            console.log("Both players ready, starting match...");
             fb.triggerMatchStart();
         }
     });
 
     // Listen for match start
     fb.listenToMatchStart(async (timestamp) => {
-        console.log("Match start received:", timestamp);
         // Hide P2P screen, show game
         document.getElementById('p2p-screen').classList.add('hidden');
         document.getElementById('game-container').classList.remove('hidden');
@@ -1242,7 +1260,6 @@ document.getElementById('ready-btn').onclick = () => {
 // Solo mode from P2P screen
 document.getElementById('select-solo').onclick = () => {
     arcade.playClickSound();
-    console.log("Selected Solo Mode");
     document.getElementById('p2p-screen').classList.add('hidden');
     document.getElementById('game-container').classList.remove('hidden');
     initGame('Solo');
@@ -1258,59 +1275,7 @@ document.getElementById('select-solo').onclick = () => {
 });
 
 function updateAvatar() {
-    if (!p2 || typeof p2.score === 'undefined') return;
-
-    // Calculate score difference from each player's perspective
-    // Positive diff = that player is winning
-    // Negative diff = that player is losing
-
-    const p1Avatar = document.getElementById('p1-avatar');
-    const p2Avatar = document.getElementById('p2-avatar');
-
-    // Lifedelinquent's score diff (My Score - Opponent's Score)
-    let lifeDiff = 0;
-    // ChronoKoala's score diff
-    let chronoDiff = 0;
-
-    if (fb.userId === "Lifedelinquent") {
-        lifeDiff = score - p2.score;       // Life (Me) - Chrono (P2)
-        chronoDiff = p2.score - score;     // Chrono (P2) - Life (Me)
-    } else if (fb.userId === "ChronoKoala") {
-        lifeDiff = p2.score - score;       // Life (P2) - Chrono (Me)
-        chronoDiff = score - p2.score;     // Chrono (Me) - Life (P2)
-    } else {
-        // Solo mode - just show normal
-        return;
-    }
-
-    // Helper function to determine face based on score diff
-    function getFace(diff) {
-        if (diff >= 1000) return "excited";      // Winning Big
-        else if (diff >= 200) return "happy";    // Winning
-        else if (diff <= -1000) return "mad";    // Losing Big (Brian uses "angry")
-        else if (diff <= -200) return "sad";     // Losing
-        return "normal";
-    }
-
-    // Update Brian (Lifedelinquent) avatar
-    if (p1Avatar) {
-        let brianFace = getFace(lifeDiff);
-        // Brian uses "angry" instead of "mad"
-        if (brianFace === "mad") brianFace = "angry";
-        const brianPath = `avatars/brian${brianFace}.png`;
-        if (!p1Avatar.src.includes(brianPath)) {
-            p1Avatar.src = brianPath;
-        }
-    }
-
-    // Update Fernando (ChronoKoala) avatar
-    if (p2Avatar) {
-        let fernandoFace = getFace(chronoDiff);
-        const fernandoPath = `avatars/fernando${fernandoFace}.png`;
-        if (!p2Avatar.src.includes(fernandoPath)) {
-            p2Avatar.src = fernandoPath;
-        }
-    }
+    hud.updateAvatar({ fb, p2, score });
 }
 
 function togglePause() {
@@ -1318,7 +1283,6 @@ function togglePause() {
 
     // Check if we can unpause (only initiator can unpause within 5 min)
     if (isPaused && !canUnpause) {
-        console.log("Cannot unpause - only the player who paused can unpause (or wait 5 min)");
         return;
     }
 
@@ -1342,15 +1306,16 @@ function applyLocalPause(shouldPause, canUnpauseLocal = true) {
 
     if (isPaused) {
         // PAUSE
-        console.log("Game Paused");
         overlay.classList.remove('hidden');
 
+        // Cancel any held movement keys: when unpaused the player should
+        // start with a fresh press, not surprise auto-repeats.
+        controls.clearHeldKeys();
+
         // Update overlay text to show who can unpause
-        const pauseText = overlay.querySelector('h2') || overlay;
-        if (!canUnpause) {
-            pauseText.textContent = "PAUSED - Waiting for opponent...";
-        } else {
-            pauseText.textContent = "PAUSED";
+        const pauseTitle = document.getElementById('pause-title');
+        if (pauseTitle) {
+            pauseTitle.textContent = canUnpause ? "PAUSED" : "PAUSED - Waiting for opponent...";
         }
 
         // Stop audio context (synthesized) and MP3 music
@@ -1371,7 +1336,6 @@ function applyLocalPause(shouldPause, canUnpauseLocal = true) {
 
     } else {
         // RESUME
-        console.log("Game Resumed");
         overlay.classList.add('hidden');
 
         // Resume audio context and MP3
@@ -1400,7 +1364,114 @@ function applyLocalPause(shouldPause, canUnpauseLocal = true) {
 let canUnpause = true;
 
 window.addEventListener('keydown', (e) => {
+    // ESC also closes the settings modal - but only if it's the topmost overlay.
+    const settingsModal = document.getElementById('settings-modal');
+    if (e.key === 'Escape' && settingsModal && !settingsModal.classList.contains('hidden')) {
+        closeSettingsPanel();
+        return;
+    }
     if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
         togglePause();
     }
 });
+
+// --- Settings panel wiring ---
+
+function openSettingsPanel() {
+    const modal = document.getElementById('settings-modal');
+    if (!modal) return;
+    _refreshSettingsUI();
+    modal.classList.remove('hidden');
+    arcade.playClickSound();
+}
+
+function closeSettingsPanel() {
+    const modal = document.getElementById('settings-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    arcade.playClickSound();
+}
+
+// Push current `settings` values into the panel inputs. Called every time
+// the panel opens so it reflects whatever the live state is.
+function _refreshSettingsUI() {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    const setNum = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val; };
+
+    set('set-music-vol', settings.musicVol);
+    setNum('set-music-vol-out', settings.musicVol.toFixed(2));
+    set('set-sfx-vol', settings.sfxVol);
+    setNum('set-sfx-vol-out', settings.sfxVol.toFixed(2));
+
+    set('set-das', settings.dasMs);   setNum('set-das-out',  settings.dasMs + 'ms');
+    set('set-arr', settings.arrMs);   setNum('set-arr-out',  settings.arrMs + 'ms');
+    set('set-soft', settings.softDropMs); setNum('set-soft-out', settings.softDropMs + 'ms');
+    set('set-lock', settings.lockDelayMs); setNum('set-lock-out', settings.lockDelayMs + 'ms');
+
+    setChk('set-ghost', settings.ghostPiece);
+    setChk('set-scanlines', settings.scanlines);
+}
+
+// Wire every input in the panel to a setSetting() call. Each binding also
+// updates the displayed numeric so users see the value change live.
+function _wireSettingsPanelInputs() {
+    const bindRange = (id, key, fmt) => {
+        const inp = document.getElementById(id);
+        const out = document.getElementById(id + '-out');
+        if (!inp) return;
+        inp.addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            setSetting(key, v);
+            if (out) out.textContent = fmt(v);
+        });
+    };
+    const bindCheckbox = (id, key) => {
+        const inp = document.getElementById(id);
+        if (!inp) return;
+        inp.addEventListener('change', (e) => setSetting(key, e.target.checked));
+    };
+
+    bindRange('set-music-vol', 'musicVol',     v => v.toFixed(2));
+    bindRange('set-sfx-vol',   'sfxVol',       v => v.toFixed(2));
+    bindRange('set-das',       'dasMs',        v => v + 'ms');
+    bindRange('set-arr',       'arrMs',        v => v + 'ms');
+    bindRange('set-soft',      'softDropMs',   v => v + 'ms');
+    bindRange('set-lock',      'lockDelayMs',  v => v + 'ms');
+    bindCheckbox('set-ghost',     'ghostPiece');
+    bindCheckbox('set-scanlines', 'scanlines');
+
+    document.getElementById('settings-reset')?.addEventListener('click', () => {
+        resetSettings();
+        _refreshSettingsUI();
+        arcade.playClickSound();
+    });
+
+    document.getElementById('settings-close')?.addEventListener('click', closeSettingsPanel);
+    document.getElementById('open-settings-btn')?.addEventListener('click', openSettingsPanel);
+    // Backdrop click also dismisses.
+    document.querySelector('#settings-modal .settings-backdrop')
+        ?.addEventListener('click', closeSettingsPanel);
+}
+_wireSettingsPanelInputs();
+
+// React to setting changes. Audio gains and visual toggles update live.
+onSettingChange((key, value) => {
+    if (key === 'musicVol') {
+        arcade.setMusicVolume(value);
+        const slider = document.getElementById('music-slider');
+        if (slider && parseFloat(slider.value) !== value) slider.value = value;
+    } else if (key === 'sfxVol') {
+        arcade.setSfxVolume(value);
+        const slider = document.getElementById('sfx-slider');
+        if (slider && parseFloat(slider.value) !== value) slider.value = value;
+    } else if (key === 'scanlines') {
+        document.body.classList.toggle('no-crt', !value);
+    } else if (key === 'ghostPiece') {
+        if (p1) p1.showGhost = value;
+        if (p2) p2.showGhost = value;
+    }
+});
+
+// Apply visual settings on boot so refresh respects saved state.
+document.body.classList.toggle('no-crt', !settings.scanlines);

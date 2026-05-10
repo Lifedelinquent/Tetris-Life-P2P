@@ -1,0 +1,82 @@
+// Live, persisted user settings. The shape is one flat object so importers
+// can read `settings.dasMs` directly and always get the latest value.
+// Defaults come from config.js so a player's first session matches the
+// shipped balance.
+
+import * as cfg from './config.js';
+
+const STORAGE_KEY = 'tetris_life_settings';
+
+const DEFAULTS = {
+    // Audio (initialized from older standalone keys for back-compat).
+    musicVol: 0.2,
+    sfxVol: 0.5,
+
+    // Input feel - all milliseconds.
+    dasMs:        cfg.DAS_MS,
+    arrMs:        cfg.ARR_MS,
+    softDropMs:   cfg.SOFT_DROP_REPEAT_MS,
+    lockDelayMs:  cfg.LOCK_DELAY_MS,
+
+    // Visual toggles.
+    ghostPiece: true,
+    scanlines:  true,
+};
+
+function _loadSaved() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) return JSON.parse(raw);
+    } catch (e) {
+        console.warn('Settings load failed:', e);
+    }
+    return {};
+}
+
+// Migrate the standalone volume keys (Phase 0 #21) into the new bag so
+// users don't lose their saved volumes on the first run with this code.
+function _migrateLegacyVolumes(obj) {
+    try {
+        const m = localStorage.getItem(cfg.STORAGE_MUSIC_VOL);
+        if (m !== null && obj.musicVol === undefined) obj.musicVol = parseFloat(m);
+        const s = localStorage.getItem(cfg.STORAGE_SFX_VOL);
+        if (s !== null && obj.sfxVol === undefined) obj.sfxVol = parseFloat(s);
+    } catch {}
+    return obj;
+}
+
+const saved = _migrateLegacyVolumes(_loadSaved());
+export const settings = { ...DEFAULTS, ...saved };
+
+export function saveSettings() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    } catch (e) {
+        console.warn('Settings save failed:', e);
+    }
+}
+
+export function setSetting(key, value) {
+    settings[key] = value;
+    saveSettings();
+    _notify(key, value);
+}
+
+// Tiny pub/sub so live-affecting subsystems (audio, CRT toggle, ghost piece)
+// can react when a setting changes without polling.
+const _listeners = new Set();
+export function onSettingChange(fn) {
+    _listeners.add(fn);
+    return () => _listeners.delete(fn);
+}
+function _notify(key, value) {
+    for (const fn of _listeners) {
+        try { fn(key, value); } catch (e) { console.warn('Setting listener:', e); }
+    }
+}
+
+export function resetSettings() {
+    Object.assign(settings, DEFAULTS);
+    saveSettings();
+    for (const k of Object.keys(DEFAULTS)) _notify(k, settings[k]);
+}
