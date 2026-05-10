@@ -34,8 +34,8 @@ function gameLoop() {
     const now = Date.now();
     const elapsed = now - startTime;
 
-    // Timer UI (Count DOWN from MATCH_DURATION_MS)
-    const remaining = Math.max(0, cfg.MATCH_DURATION_MS - elapsed);
+    // Timer UI (counts DOWN from the user-configured match duration)
+    const remaining = Math.max(0, settings.matchDurationMs - elapsed);
     const mins = Math.floor(remaining / 60000);
     const secs = Math.floor((remaining % 60000) / 1000);
     const timerEl = document.getElementById('timer');
@@ -49,15 +49,24 @@ function gameLoop() {
         return;
     }
 
-    // Level & Speed Logic - Faster progression for intense battles (based on Tetris 99 research)
-    const level = Math.floor(elapsed / 15000) + 1; // 15s Levels
+    // Speed curve scales with settings.speedCurvePct (100 = original pacing).
+    //   pct=0   -> never level up (gravity stays at start speed)
+    //   pct=100 -> level every 15s, -50ms/level (default)
+    //   pct=200 -> level every 7.5s, -100ms/level (max speed in ~2.5 min)
+    const pct = Math.max(0, settings.speedCurvePct);
+    const decrement = (cfg.GRAVITY_DECREMENT * pct) / 100;
+    const levelInterval = pct > 0 ? (cfg.LEVEL_INTERVAL_MS * 100) / pct : Infinity;
+    const level = Math.floor(elapsed / levelInterval) + 1;
 
-    // Speed: 1200ms start, decrease 50ms per level, min 180ms (max speed at ~5 mins)
-    let targetSpeed = Math.max(180, 1200 - ((level - 1) * 50));
+    let targetSpeed = Math.max(
+        cfg.GRAVITY_FLOOR_MS,
+        cfg.GRAVITY_START_MS - ((level - 1) * decrement)
+    );
 
-    // MP3 tempo sync: gentle 2%-per-level speedup
-    if (!isNaN(level) && level > 0) {
-        arcade.setMusicSpeed(1 + ((level - 1) * 0.02));
+    // MP3 tempo sync: same level-driven multiplier so music intensifies
+    // alongside gravity.
+    if (!isNaN(level) && level > 0 && level !== Infinity) {
+        arcade.setMusicSpeed(1 + ((level - 1) * cfg.MUSIC_PER_LEVEL));
     }
 
     // Stats UI (Score) - the animated tween handles smoothness; gameLoop
@@ -1392,6 +1401,12 @@ function closeSettingsPanel() {
     arcade.playClickSound();
 }
 
+// Format milliseconds as M:SS for the match-duration slider readout.
+function _fmtDuration(ms) {
+    const s = Math.round(ms / 1000);
+    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+}
+
 // Push current `settings` values into the panel inputs. Called every time
 // the panel opens so it reflects whatever the live state is.
 function _refreshSettingsUI() {
@@ -1408,6 +1423,12 @@ function _refreshSettingsUI() {
     set('set-arr', settings.arrMs);   setNum('set-arr-out',  settings.arrMs + 'ms');
     set('set-soft', settings.softDropMs); setNum('set-soft-out', settings.softDropMs + 'ms');
     set('set-lock', settings.lockDelayMs); setNum('set-lock-out', settings.lockDelayMs + 'ms');
+
+    // Match-shape sliders. Duration slider is in seconds; settings stores ms.
+    set('set-duration', Math.round(settings.matchDurationMs / 1000));
+    setNum('set-duration-out', _fmtDuration(settings.matchDurationMs));
+    set('set-speed', settings.speedCurvePct);
+    setNum('set-speed-out', settings.speedCurvePct + '%');
 
     setChk('set-ghost', settings.ghostPiece);
     setChk('set-scanlines', settings.scanlines);
@@ -1438,6 +1459,19 @@ function _wireSettingsPanelInputs() {
     bindRange('set-arr',       'arrMs',        v => v + 'ms');
     bindRange('set-soft',      'softDropMs',   v => v + 'ms');
     bindRange('set-lock',      'lockDelayMs',  v => v + 'ms');
+    bindRange('set-speed',     'speedCurvePct', v => v + '%');
+
+    // Match duration slider is in seconds for usability; we store ms.
+    const durInp = document.getElementById('set-duration');
+    const durOut = document.getElementById('set-duration-out');
+    if (durInp) {
+        durInp.addEventListener('input', (e) => {
+            const ms = parseInt(e.target.value, 10) * 1000;
+            setSetting('matchDurationMs', ms);
+            if (durOut) durOut.textContent = _fmtDuration(ms);
+        });
+    }
+
     bindCheckbox('set-ghost',     'ghostPiece');
     bindCheckbox('set-scanlines', 'scanlines');
 

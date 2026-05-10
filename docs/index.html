@@ -69,6 +69,20 @@
             </div>
 
             <div class="settings-section">
+                <h3>MATCH</h3>
+                <label class="settings-row">
+                    <span>Match Length <em>(time-up tie-break uses attack sent)</em></span>
+                    <input type="range" id="set-duration" min="30" max="600" step="15">
+                    <span class="settings-num" id="set-duration-out">2:00</span>
+                </label>
+                <label class="settings-row">
+                    <span>Speed Curve <em>(how fast gravity ramps - 0 = no ramp, 200 = double)</em></span>
+                    <input type="range" id="set-speed" min="0" max="200" step="25">
+                    <span class="settings-num" id="set-speed-out">100%</span>
+                </label>
+            </div>
+
+            <div class="settings-section">
                 <h3>VISUAL</h3>
                 <label class="settings-row settings-row-toggle">
                     <span>Ghost Piece</span>

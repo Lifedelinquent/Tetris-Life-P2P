@@ -18,6 +18,14 @@ const DEFAULTS = {
     softDropMs:   cfg.SOFT_DROP_REPEAT_MS,
     lockDelayMs:  cfg.LOCK_DELAY_MS,
 
+    // Match shape.
+    matchDurationMs: cfg.MATCH_DURATION_MS,
+    // Speed curve as a percentage where 100 = the original "Normal" pacing
+    // (level every 15s, gravity drops 50ms per level). 0 disables speedup
+    // entirely; 200 doubles the rate so the game ramps to max speed in
+    // ~2.5 min instead of ~5.
+    speedCurvePct: 100,
+
     // Visual toggles.
     ghostPiece: true,
     scanlines:  true,

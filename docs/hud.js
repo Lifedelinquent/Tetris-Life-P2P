@@ -2,7 +2,8 @@
 // records, and the end-of-match stats card. Pure functions - state is
 // passed in by main.js so this module has no globals of its own.
 
-import { MATCH_DURATION_MS, HOST_USER_ID, GUEST_USER_ID } from './config.js';
+import { HOST_USER_ID, GUEST_USER_ID } from './config.js';
+import { settings } from './settings.js';
 import { animateNumber } from './vfx.js';
 
 // --- Power-up button styling driven by the BattleManager's currency ---
@@ -101,7 +102,7 @@ export function populateStatsCard({ battle, startTime, score }) {
     const attack   = battle ? battle.linesSent         : 0;
 
     const elapsedMs = startTime
-        ? Math.min(MATCH_DURATION_MS, Date.now() - startTime)
+        ? Math.min(settings.matchDurationMs, Date.now() - startTime)
         : 0;
     const elapsedSec = Math.floor(elapsedMs / 1000);
     const m = Math.floor(elapsedSec / 60);
