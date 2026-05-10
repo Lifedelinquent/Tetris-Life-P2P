@@ -279,7 +279,6 @@ async function initGame(userId) {
 
         // 2b. Listen for Pause State Sync (Both players pause/unpause together)
         fb.listenToPause((pauseState) => {
-            // Only log actual pause changes, not every Firebase update
             applyLocalPause(pauseState.paused, pauseState.canUnpause);
         });
 
@@ -287,7 +286,7 @@ async function initGame(userId) {
         // Host (Lifedelinquent) detects Guest.
         const opponentId = userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
 
-        // Listen continuously. The handler in multiplayer.js handles deduping by timestamp.
+        // Listen continuously. The handler dedupes by timestamp.
         fb.listenToOnline(opponentId, async (isOnline) => {
             if (isOnline) {
                 console.log("Opponent Detected (New Session/Refresh)!");
@@ -1250,8 +1249,6 @@ document.getElementById('select-solo').onclick = () => {
     startCountdown(Date.now() + 3000);
 };
 
-// Old Firebase-based character selection removed - now using P2P connection flow above
-
 // Arcade Button Hover Sounds
 ['create-room-btn', 'join-room-btn', 'select-solo', 'ready-btn'].forEach(id => {
     const btn = document.getElementById(id);
@@ -1327,7 +1324,7 @@ function togglePause() {
 
     const wantToPause = !isPaused;
 
-    // Send to Firebase - the listener will handle the actual state change
+    // The listener handles the actual state change
     if (fb && fb.setPause) {
         fb.setPause(wantToPause);
     } else {
@@ -1336,7 +1333,6 @@ function togglePause() {
     }
 }
 
-// Called by Firebase listener or directly for solo mode
 function applyLocalPause(shouldPause, canUnpauseLocal = true) {
     if (shouldPause === isPaused) return; // No change
 

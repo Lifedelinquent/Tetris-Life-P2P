@@ -1,7 +1,6 @@
 /**
  * P2P Handler for Tetris Life Battle
  * Uses PeerJS for WebRTC peer-to-peer connections
- * Drop-in replacement for FirebaseHandler
  */
 
 export class P2PHandler {
@@ -17,7 +16,7 @@ export class P2PHandler {
         this.connected = false;
         this.opponentStats = null; // Opponent's win/loss record received via P2P
 
-        // Deduplication timestamps (same as Firebase version)
+        // Deduplication timestamps
         this.lastProcessedAttackTime = Date.now();
         this.lastProcessedBombTime = Date.now();
         this.lastStartTime = 0;
@@ -203,7 +202,7 @@ export class P2PHandler {
         }
     }
 
-    // --- Game State Methods (Same API as FirebaseHandler) ---
+    // --- Game State Methods ---
 
     async initPlayer(name) {
         // Send online status to opponent
@@ -274,7 +273,6 @@ export class P2PHandler {
     }
 
     handleGameState(payload) {
-        // Format data like Firebase does
         const data = {
             [`${this.opponentId}`]: JSON.stringify(payload)
         };
