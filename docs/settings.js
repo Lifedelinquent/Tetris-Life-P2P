@@ -71,6 +71,15 @@ export function setSetting(key, value) {
     _notify(key, value);
 }
 
+// Apply a setting in memory without persisting it. Used when a value is
+// pushed in from a network broadcast (e.g. host -> guest match-settings sync),
+// so the guest's own saved preferences aren't overwritten by what the host
+// happens to be using.
+export function applySettingTransient(key, value) {
+    settings[key] = value;
+    _notify(key, value);
+}
+
 // Tiny pub/sub so live-affecting subsystems (audio, CRT toggle, ghost piece)
 // can react when a setting changes without polling.
 const _listeners = new Set();

@@ -184,6 +184,9 @@ export class P2PHandler {
             case 'stats':
                 this.handleStats(payload);
                 break;
+            case 'matchSettings':
+                this.handleMatchSettings(payload);
+                break;
         }
     }
 
@@ -391,6 +394,28 @@ export class P2PHandler {
         // If we already have opponent stats, fire immediately
         if (this.opponentStats) callback(this.opponentStats);
         return () => { this.callbacks.onOpponentStats = null; };
+    }
+
+    /**
+     * Match settings sync (host -> guest). The host broadcasts the
+     * gameplay-affecting subset (duration, speed curve, lock delay) so both
+     * clients use the same values and the game stays in sync.
+     */
+    sendMatchSettings(payload) {
+        this.send('matchSettings', payload);
+    }
+    handleMatchSettings(payload) {
+        // Cache so a late-registering listener still gets the latest value
+        // (handles the listen-vs-send race on connect).
+        this.lastMatchSettings = payload;
+        if (this.callbacks.onMatchSettings) {
+            this.callbacks.onMatchSettings(payload);
+        }
+    }
+    listenToMatchSettings(callback) {
+        this.callbacks.onMatchSettings = callback;
+        if (this.lastMatchSettings) callback(this.lastMatchSettings);
+        return () => { this.callbacks.onMatchSettings = null; };
     }
 
     async triggerMatchStart() {

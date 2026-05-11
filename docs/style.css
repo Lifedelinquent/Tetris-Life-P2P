@@ -824,6 +824,25 @@ body.single-player .p1-border {
     border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Host-controlled note shown to the guest above match settings. */
+.settings-host-note {
+    font-size: 0.6rem;
+    color: #FFD700;
+    background: rgba(255, 215, 0, 0.08);
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    border-left: 3px solid #FFD700;
+    letter-spacing: 1px;
+    line-height: 1.5;
+}
+
+/* Visual hint that disabled sliders are intentionally locked, not broken. */
+.settings-row input[type="range"]:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 /* --- Power-up activation effects ---
    Each effect inserts a self-cleaning DOM element (so we can stack them
    and avoid keyframe-restart hacks). The element is removed by a setTimeout

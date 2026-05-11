@@ -15,7 +15,23 @@ import {
 } from './vfx.js';
 import * as hud from './hud.js';
 import { createControls } from './controls.js';
-import { settings, setSetting, resetSettings, onSettingChange } from './settings.js';
+import {
+    settings,
+    setSetting,
+    applySettingTransient,
+    resetSettings,
+    onSettingChange,
+} from './settings.js';
+
+// Which settings sync from host to guest. These are the ones that materially
+// affect gameplay state (timing). Per-player feel/audio settings stay local.
+const HOST_SYNCED_SETTINGS = ['matchDurationMs', 'speedCurvePct', 'lockDelayMs'];
+
+function _snapshotHostSyncedSettings() {
+    const out = {};
+    for (const k of HOST_SYNCED_SETTINGS) out[k] = settings[k];
+    return out;
+}
 
 let fb = null; // Will be initialized when P2P connection is established
 const arcade = new ArcadeManager();
@@ -219,6 +235,7 @@ function createSoloMock() {
         sendAttack: asyncNoop,
         sendBomb: asyncNoop,
         sendStats: noop,
+        sendMatchSettings: noop,
         // listeners (return cleanup so callers can compose without breaking)
         listenToMatchStart: () => cleanup,
         listenToMatch: () => cleanup,
@@ -227,6 +244,7 @@ function createSoloMock() {
         listenToOnline: () => cleanup,
         listenToReadyStatus: () => cleanup,
         listenToOpponentStats: () => cleanup,
+        listenToMatchSettings: () => cleanup,
         listenToRematch: () => cleanup,
         listenToPause: (cb) => { cb({ paused: false, pausedBy: null, pausedAt: null, canUnpause: true }); return cleanup; },
         // ready / pause / rematch
@@ -1210,6 +1228,24 @@ function setupP2PReadySystem() {
         updateOpponentRecord(opponentStats);
     });
 
+    // --- Match-settings sync ---
+    // Host is authoritative for the gameplay-affecting subset so both clients
+    // run on the same numbers. Guest receives via transient apply (no save),
+    // so the guest's own saved preferences aren't clobbered.
+    fb.listenToMatchSettings((hostSettings) => {
+        if (fb.isHost) return; // ignore echoes of our own broadcasts
+        for (const k of HOST_SYNCED_SETTINGS) {
+            if (hostSettings[k] !== undefined) {
+                applySettingTransient(k, hostSettings[k]);
+            }
+        }
+        // If the panel is open, reflect the incoming values immediately.
+        _refreshSettingsUI();
+    });
+    if (fb.isHost) {
+        fb.sendMatchSettings(_snapshotHostSyncedSettings());
+    }
+
     // Setup reset stats button
     const resetBtn = document.getElementById('reset-stats-btn');
     if (resetBtn) {
@@ -1452,6 +1488,15 @@ function _refreshSettingsUI() {
 
     setChk('set-ghost', settings.ghostPiece);
     setChk('set-scanlines', settings.scanlines);
+
+    // In multiplayer, host controls match settings - disable the inputs
+    // on the guest side and surface a one-line note.
+    const isGuest = fb && fb.connected && !fb.isHost;
+    ['set-duration', 'set-speed', 'set-lock'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = isGuest;
+    });
+    document.getElementById('match-host-note')?.classList.toggle('hidden', !isGuest);
 }
 
 // Wire every input in the panel to a setSetting() call. Each binding also
@@ -1524,6 +1569,14 @@ onSettingChange((key, value) => {
     } else if (key === 'ghostPiece') {
         if (p1) p1.showGhost = value;
         if (p2) p2.showGhost = value;
+    }
+
+    // Host: broadcast match-affecting settings so the guest mirrors them.
+    // Skip guest's own setting writes (which only happen via the transient
+    // apply path, which uses _notify directly without persisting - those
+    // still flow through here but `!fb.isHost` blocks the rebroadcast).
+    if (HOST_SYNCED_SETTINGS.includes(key) && fb && fb.isHost && fb.sendMatchSettings) {
+        fb.sendMatchSettings(_snapshotHostSyncedSettings());
     }
 });
 
