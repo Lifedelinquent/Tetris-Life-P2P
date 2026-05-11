@@ -220,6 +220,10 @@ export class ArcadeManager {
     // --- Audio ---
 
     initAudio() {
+        // Idempotent. init() and the main.js first-click handler both used
+        // to call this; the second call would replace audioCtx and orphan
+        // the original gain nodes (silent music with confused state).
+        if (this.audioCtx) return;
         this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
         // Master Gain
@@ -227,9 +231,9 @@ export class ArcadeManager {
         this.masterGain.gain.value = 1.0;
         this.masterGain.connect(this.audioCtx.destination);
 
-        // BGM Gain
+        // BGM Gain - the master volume slider drives this.
         this.bgmGain = this.audioCtx.createGain();
-        this.bgmGain.gain.value = 0.2; // Default Music Level (20%)
+        this.bgmGain.gain.value = 0.3; // Default Music Level (30%)
         this.bgmGain.connect(this.masterGain);
 
         // SFX Gain
@@ -291,17 +295,22 @@ export class ArcadeManager {
 
     setMusicVolume(value) {
         const vol = Math.max(0, Math.min(1, parseFloat(value)));
-        this.musicVolume = vol; // Store for reference
+        this.musicVolume = vol;
 
-        // Update Web Audio gain (synthesized music)
+        // Cancel any in-flight fade so the user's drag wins. Without this
+        // the fade keeps stepping toward the captured-at-start target and
+        // fights every slider change for ~1.5s.
+        if (this.fadeInterval) {
+            clearInterval(this.fadeInterval);
+            this.fadeInterval = null;
+        }
+
         if (this.bgmGain) {
             this.bgmGain.gain.setValueAtTime(vol, this.audioCtx.currentTime);
         }
-        // Update HTML5 Audio element (MP3 music)
         if (this.audioElement) {
             this.audioElement.volume = vol;
         }
-        // Update game over audio element if exists
         if (this.gameOverAudio) {
             this.gameOverAudio.volume = vol;
         }

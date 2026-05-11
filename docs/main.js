@@ -106,15 +106,19 @@ function _syncMusicButtons(isOn) {
 
 window.addEventListener('load', () => {
     try {
-        // Auto-init audio on first user interaction (no click-to-start screen)
+        // Browsers require a user gesture to start audio. arcade.init() ran
+        // at module load (already created the suspended AudioContext); on
+        // the first click we resume it. If the user had music ON last time,
+        // we also kick playback now so the UI promise ("MUSIC: ON") is true.
         let audioInitialized = false;
         document.addEventListener('click', () => {
-            if (!audioInitialized) {
-                arcade.initAudio();
-                arcade.resumeAudio();
-                audioInitialized = true;
+            if (audioInitialized) return;
+            audioInitialized = true;
+            arcade.resumeAudio();
+            if (arcade.musicOn) {
+                arcade.startMusic();
             }
-        }, { once: false }); // Keep listening but only init once
+        });
 
         // Apply the persisted musicOn preference so the engine matches
         // the user's last choice across reloads.

@@ -208,11 +208,11 @@
     </div>
 
     <div id="game-container" class="hidden">
-        <!-- Pause Overlay -->
-        <div id="pause-overlay" class="overlay hidden"
-            style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;">
-            <div id="pause-title" style="font-size: 5rem; color: #fff; text-shadow: 0 0 20px cyan, 0 0 40px cyan;">PAUSED</div>
-            <div id="pause-subtitle" style="font-size: 1.5rem; color: #aaa; margin-top: 20px;">Press 'P' or 'Esc' to Resume</div>
+        <!-- Pause Overlay - starts below the top bar so the music/SFX
+             sliders remain reachable while paused. -->
+        <div id="pause-overlay" class="overlay hidden pause-overlay">
+            <div id="pause-title" class="pause-title">PAUSED</div>
+            <div id="pause-subtitle" class="pause-subtitle">Press 'P' or 'Esc' to Resume</div>
         </div>
         <!-- Top Bar -->
         <div class="top-bar">
@@ -226,7 +226,7 @@
                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
                     <div style="display: flex; align-items: center; gap: 5px;">
                         <label for="music-slider" style="font-size: 0.6rem; color: #aaa;">MUSIC</label>
-                        <input type="range" id="music-slider" min="0" max="1" step="0.05" value="0.2"
+                        <input type="range" id="music-slider" min="0" max="1" step="0.05" value="0.3"
                             style="width: 70px;" onkeydown="if(event.key.startsWith('Arrow')) event.preventDefault()">
                     </div>
                     <div style="display: flex; align-items: center; gap: 5px;">

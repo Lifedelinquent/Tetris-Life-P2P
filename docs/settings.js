@@ -9,7 +9,7 @@ const STORAGE_KEY = 'tetris_life_settings';
 
 const DEFAULTS = {
     // Audio (initialized from older standalone keys for back-compat).
-    musicVol: 0.2,
+    musicVol: 0.3,
     sfxVol: 0.5,
     musicOn: false,    // user preference for whether music plays at all
 
