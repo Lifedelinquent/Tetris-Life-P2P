@@ -470,6 +470,11 @@ async function initGame(userId) {
                                 const el = document.getElementById(targetId);
                                 if (el) el.innerText = p.linesSent;
                             }
+                            // Mirror opponent's combo + B2B onto their side of the HUD.
+                            if (p.combo !== undefined || p.backToBack !== undefined) {
+                                const opponentPrefix = userId === "Lifedelinquent" ? 'p2' : 'p1';
+                                BattleManager.renderComboUI(opponentPrefix, p.combo || 0, !!p.backToBack);
+                            }
                         }
                     }
 
@@ -543,6 +548,11 @@ function startCountdown(targetStartTime) {
     if (p1SentEl) p1SentEl.innerText = '0';
     if (p2SentEl) p2SentEl.innerText = '0';
     if (p2) p2.linesSent = 0;
+
+    // Hide combo + B2B UI for both sides so leftover state from the
+    // previous match doesn't linger into the new one.
+    BattleManager.renderComboUI('p1', 0, false);
+    BattleManager.renderComboUI('p2', 0, false);
 
     // Broadcast Empty State to Opponent immediately
     // This ensures they see us as empty even if they joined late or have old data
@@ -684,6 +694,13 @@ function handleLock(result, isTSpin = false) {
         rawAttack = p1Battle.calculateAttack(result.linesCleared, isTSpin);
     }
 
+    // Floating COMBO callout - the inline meter is small and easy to miss.
+    if (result.linesCleared > 0 && p1Battle.combo > 1) {
+        const x = p1Battle.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+        const color = p1Battle.combo > 6 ? '#FF0D72' : '#FFE138';
+        arcade.createFloatingText(`COMBO ×${p1Battle.combo}`, x, window.innerHeight * 0.48, color);
+    }
+
     // All-Clear (Perfect Clear): if the clear emptied the board entirely,
     // award a fixed +6 attack and play a dramatic flourish.
     if (result.linesCleared > 0 && p1.grid.every(row => row.every(cell => cell === 0))) {
@@ -745,7 +762,9 @@ function buildActivePiecePayload() {
         pos: p1.pos,
         rotation: p1.rotation,
         score: score,
-        linesSent: p1Battle ? p1Battle.linesSent : 0
+        linesSent: p1Battle ? p1Battle.linesSent : 0,
+        combo: p1Battle ? p1Battle.combo : 0,
+        backToBack: p1Battle ? p1Battle.backToBack : false
     };
 }
 

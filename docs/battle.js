@@ -347,31 +347,36 @@ export class BattleManager {
         } else {
             this.combo = 0;
         }
+
+        // Back-to-Back: Tetris or any T-spin extends the chain; any other
+        // line clear breaks it. A drop with no clear preserves it.
+        let b2bBonus = 0;
+        if (linesCleared > 0) {
+            if (linesCleared === 4 || isTSpin) {
+                if (this.backToBack) b2bBonus = 1;
+                this.backToBack = true;
+            } else {
+                this.backToBack = false;
+            }
+        }
+
         this.updateComboUI();
 
         if (linesCleared === 0) return 0;
 
-        // Require at least 2 lines to send garbage, unless a T-spin (any kind)
-        // earned a clear - those always count for attack.
-        if (linesCleared < 2 && !isTSpin) return 0;
-
-        // Base: 2 lines = 1, 3 lines = 2, 4 lines = 3
+        // Base: single = 0, 2 lines = 1, 3 lines = 2, 4 lines = 3.
+        // Single line clears send 0 base damage but still carry combo bonus.
         let linesToSend = linesCleared - 1;
 
         // T-spin bonus: full = +2, mini = +1
         if (tSpinKind === 'full') linesToSend += 2;
         else if (tSpinKind === 'mini') linesToSend += 1;
 
-        // Combo bonus
+        // Combo bonus stacks on top regardless of clear size
         linesToSend += this.getComboBonus();
 
-        // Back-to-Back: Tetris or any T-spin clear
-        if (linesCleared === 4 || isTSpin) {
-            if (this.backToBack) linesToSend += 1;
-            this.backToBack = true;
-        } else if (linesCleared > 0) {
-            this.backToBack = false;
-        }
+        linesToSend += b2bBonus;
+
         return linesToSend;
     }
 
@@ -387,31 +392,36 @@ export class BattleManager {
     }
 
     updateComboUI() {
-        const prefix = this.isPlayer1 ? 'p1' : 'p2';
-        const wrap   = document.getElementById(`${prefix}-combo-wrap`);
-        const fill   = document.getElementById(`${prefix}-combo-fill`);
-        const count  = document.getElementById(`${prefix}-combo-count`);
-        const badge  = document.getElementById(`${prefix}-b2b-badge`);
+        BattleManager.renderComboUI(this.isPlayer1 ? 'p1' : 'p2', this.combo, this.backToBack);
+    }
+
+    // Render combo + B2B for an arbitrary side. Used both for the local
+    // player's own UI and for mirroring the opponent's combo over the wire.
+    static renderComboUI(prefix, combo, backToBack) {
+        const wrap  = document.getElementById(`${prefix}-combo-wrap`);
+        const fill  = document.getElementById(`${prefix}-combo-fill`);
+        const count = document.getElementById(`${prefix}-combo-count`);
+        const badge = document.getElementById(`${prefix}-b2b-badge`);
 
         if (!wrap || !fill) return;
 
-        if (this.combo > 1) {
+        if (combo > 1) {
             wrap.style.display = 'flex';
             if (count) {
                 const previous = parseInt(count.textContent, 10) || 0;
-                count.textContent = this.combo;
+                count.textContent = combo;
                 // Scale-pop on every increment; restart by force-reflowing.
-                if (this.combo > previous) {
+                if (combo > previous) {
                     count.classList.remove('combo-bump');
                     void count.offsetWidth;
                     count.classList.add('combo-bump');
                 }
             }
 
-            const percentage = Math.min(100, (this.combo / 10) * 100);
+            const percentage = Math.min(100, (combo / 10) * 100);
             fill.style.width = percentage + '%';
 
-            if (this.combo > 6) {
+            if (combo > 6) {
                 fill.style.background = `linear-gradient(90deg, #FF0D72, #FF0000)`;
                 fill.style.boxShadow = '0 0 15px #FF0000';
             } else {
@@ -421,11 +431,13 @@ export class BattleManager {
         } else {
             wrap.style.display = 'none';
             fill.style.width = '0%';
+            // Reset the displayed count so the bump-animation diff starts
+            // from a clean baseline next time the wrap reappears.
+            if (count) count.textContent = '0';
         }
 
-        // Back-to-Back badge mirrors the engine state.
         if (badge) {
-            badge.classList.toggle('hidden', !this.backToBack);
+            badge.classList.toggle('hidden', !backToBack);
         }
     }
 
