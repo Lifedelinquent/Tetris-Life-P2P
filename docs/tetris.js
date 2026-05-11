@@ -6,6 +6,7 @@ export const BLOCK_SIZE = 40;
 
 export const PIECES = {
     'I': [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
+    'LIGHTNING_I': [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]], // Lightning power-up I-piece (can't be held)
     'J': [[1, 0, 0], [1, 1, 1], [0, 0, 0]],
     'L': [[0, 0, 1], [1, 1, 1], [0, 0, 0]],
     'O': [[1, 1], [1, 1]],
@@ -21,6 +22,7 @@ export const BUSTER_SHAPES = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
 
 export const COLORS = {
     'I': '#00f0f0',
+    'LIGHTNING_I': '#00f0f0', // Same visual as I — blocked from hold
     'J': '#0000f0',
     'L': '#f0a000',
     'O': '#f0f000',
@@ -68,7 +70,8 @@ export class TetrisEngine {
         this.particles = []; // VFX System
 
         // Timer Mine Bomb System
-        this.activeBombs = []; // Array of { x, y, expiresAt, timerId }
+        this.activeBombs = []; // Array of { id, x, y }
+        this._nextBombId = 0;  // Monotonic per-bomb ID
         this.bombCountdown = BOMB_COUNTDOWN_MS;
 
         // Color Buster - tracks the actual shape for BUSTER pieces
@@ -153,11 +156,16 @@ export class TetrisEngine {
     }
 
     rotate(dir) {
+        // O-piece and BOMB (which uses the O-piece shape) should never rotate.
+        if (this.currentPiece === 'O' || this.currentPiece === 'BOMB') return;
+
+        // LIGHTNING_I uses the same kick table as I.
+
         const oldRotation = this.rotation;
         this.rotation = (this.rotation + dir + 4) % 4;
         const matrix = this.getRotatedMatrix(this.currentPiece, this.rotation);
 
-        const kicks = this.currentPiece === 'I' ? WALL_KICKS['I'] : WALL_KICKS['standard'];
+        const kicks = (this.currentPiece === 'I' || this.currentPiece === 'LIGHTNING_I') ? WALL_KICKS['I'] : WALL_KICKS['standard'];
         const kickIndex = dir === 1 ? oldRotation : this.rotation;
         const kickSet = kicks[kickIndex];
 
@@ -290,7 +298,11 @@ export class TetrisEngine {
         const matrix = this.getRotatedMatrix(this.currentPiece, this.rotation);
         const isBomb = this.currentPiece === 'BOMB';
         const isBuster = this.currentPiece === 'BUSTER';
-        const bombExpiresAt = isBomb ? Date.now() + this.bombCountdown : null;
+        // LIGHTNING_I stores as 'I' on the grid (it's just a normal I once placed).
+        const gridType = this.currentPiece === 'LIGHTNING_I' ? 'I' : this.currentPiece;
+
+        // Each bomb placement gets a unique ID so timers are independent.
+        const bombId = isBomb ? this._nextBombId++ : null;
 
         const busterPositions = [];
 
@@ -301,16 +313,16 @@ export class TetrisEngine {
                     const gridX = this.pos.x + x;
                     if (gridY >= 0) {
                         if (!isBuster) {
-                            this.grid[gridY][gridX] = this.currentPiece;
+                            this.grid[gridY][gridX] = gridType;
                         } else {
                             busterPositions.push({ x: gridX, y: gridY });
                         }
 
                         if (isBomb) {
                             this.activeBombs.push({
+                                id: bombId,
                                 x: gridX,
-                                y: gridY,
-                                expiresAt: bombExpiresAt
+                                y: gridY
                             });
                         }
                     }
@@ -319,7 +331,7 @@ export class TetrisEngine {
         });
 
         if (isBomb && this.onBombPlaced) {
-            this.onBombPlaced(bombExpiresAt);
+            this.onBombPlaced(bombId);
         }
 
         // Color Buster: detect target color, remove, gravity. Returns metadata.
@@ -398,64 +410,72 @@ export class TetrisEngine {
 
     // Apply gravity after Color Buster removes blocks
     applyGravity() {
-        // For each column, drop blocks down to fill empty spaces
+        // Track BOMB cell relocations so activeBombs stays in sync — otherwise
+        // a bomb that drops here keeps stale (x, y) and breaks per-bomb timer
+        // lookup, defuse detection, and detonation grid cleanup.
+        const bombMoves = [];
+
         for (let x = 0; x < COLS; x++) {
-            // Collect all non-empty blocks in this column (from bottom to top)
-            const blocks = [];
+            // Collect non-empty cells with their origin y so we can map moves.
+            const cells = [];
             for (let y = ROWS - 1; y >= 0; y--) {
                 if (this.grid[y][x] !== 0) {
-                    blocks.push(this.grid[y][x]);
+                    cells.push({ type: this.grid[y][x], fromY: y });
                     this.grid[y][x] = 0;
                 }
             }
 
             // Place blocks back from bottom, filling in gaps
             let placeY = ROWS - 1;
-            for (const block of blocks) {
-                this.grid[placeY][x] = block;
+            for (const cell of cells) {
+                this.grid[placeY][x] = cell.type;
+                if (cell.type === 'BOMB' && placeY !== cell.fromY) {
+                    bombMoves.push({ x, fromY: cell.fromY, toY: placeY });
+                }
                 placeY--;
             }
+        }
+
+        for (const m of bombMoves) {
+            const bomb = this.activeBombs.find(b => b.x === m.x && b.y === m.fromY);
+            if (bomb) bomb.y = m.toY;
         }
     }
 
     // Timer Mine Bomb Methods - the BattleManager owns the (pausable) timer
     // and may set bombSecondsProvider to delegate the displayed countdown.
-    getBombTimeRemaining() {
+    // bombId is optional; if given returns that bomb's remaining time.
+    getBombTimeRemaining(bombId) {
         if (this.activeBombs.length === 0) return null;
         if (typeof this.bombSecondsProvider === 'function') {
-            return this.bombSecondsProvider();
+            return this.bombSecondsProvider(bombId);
         }
-        // Fallback (shouldn't happen once BattleManager is wired): use absolute time
-        const now = Date.now();
-        const minExpiry = Math.min(...this.activeBombs.map(b => b.expiresAt));
-        return Math.max(0, Math.ceil((minExpiry - now) / 1000));
+        return null;
     }
 
     checkBombsCleared(clearedRows) {
-        // Check if ANY bomb blocks were in cleared rows
-        const initialCount = this.activeBombs.length;
-        const bombsInClearedRows = this.activeBombs.filter(bomb =>
-            clearedRows.includes(bomb.y)
-        );
-
-        if (bombsInClearedRows.length > 0) {
-            // If ANY part of the bomb is cleared, FULLY defuse the entire bomb
-            // (intuitive + rewards quick play)
-            // Remove ALL remaining bomb blocks from the grid
-            for (let y = 0; y < this.grid.length; y++) {
-                for (let x = 0; x < this.grid[y].length; x++) {
-                    if (this.grid[y][x] === 'BOMB') {
-                        this.grid[y][x] = 0; // Clear the bomb block
-                    }
-                }
+        // Find which individual bomb IDs had blocks in the cleared rows.
+        const defusedIds = new Set();
+        for (const bomb of this.activeBombs) {
+            if (clearedRows.includes(bomb.y)) {
+                defusedIds.add(bomb.id);
             }
-
-            // Clear all bomb tracking
-            this.activeBombs = [];
-            return true; // Bomb fully defused
         }
 
-        return false; // No bombs cleared
+        if (defusedIds.size === 0) return []; // No bombs cleared
+
+        // For each defused bomb, remove ALL of its blocks from the grid
+        // (a 2x2 bomb might only have 1 row cleared — defuse the whole bomb).
+        const defusedBombs = this.activeBombs.filter(b => defusedIds.has(b.id));
+        for (const b of defusedBombs) {
+            if (b.y >= 0 && b.y < this.grid.length && this.grid[b.y][b.x] === 'BOMB') {
+                this.grid[b.y][b.x] = 0;
+            }
+        }
+
+        // Remove only the defused bombs from tracking.
+        this.activeBombs = this.activeBombs.filter(b => !defusedIds.has(b.id));
+        return Array.from(defusedIds); // Return defused bomb IDs
     }
 
     updateBombPositions(clearedRows) {
@@ -466,10 +486,8 @@ export class TetrisEngine {
         });
     }
 
+    // Legacy: detonate ALL bombs at once.
     detonateBombs() {
-        // Called when bomb timer expires - clear all BOMB blocks from the grid.
-        // Positions may have shifted since merge, so scan the whole grid.
-        // No gravity here: explosion shouldn't help by compacting garbage.
         let detonatedCount = 0;
         for (let y = 0; y < ROWS; y++) {
             for (let x = 0; x < COLS; x++) {
@@ -482,6 +500,21 @@ export class TetrisEngine {
         }
         this.activeBombs = [];
         return detonatedCount > 0 ? 1 : 0;
+    }
+
+    // Per-bomb detonation: only detonate the bomb with the given ID.
+    detonateBombById(bombId) {
+        const blocks = this.activeBombs.filter(b => b.id === bombId);
+        let detonatedCount = 0;
+        for (const b of blocks) {
+            if (b.y >= 0 && b.y < ROWS && b.x >= 0 && b.x < COLS && this.grid[b.y][b.x] === 'BOMB') {
+                this.grid[b.y][b.x] = 0;
+                this.spawnBlockEffect(b.x * BLOCK_SIZE, b.y * BLOCK_SIZE, '#ff00ff', 4);
+                detonatedCount++;
+            }
+        }
+        this.activeBombs = this.activeBombs.filter(b => b.id !== bombId);
+        return detonatedCount;
     }
 
     spawnBlockEffect(x, y, color, intensity) {
@@ -535,7 +568,7 @@ export class TetrisEngine {
 
     clearLines() {
         let linesCleared = 0;
-        let bombDefused = false;
+        let defusedBombIds = []; // Array of per-bomb IDs that were defused
         const rowsToClear = [];
 
         // 1. Identify Rows
@@ -547,7 +580,7 @@ export class TetrisEngine {
 
         // 2. Check if any bombs are in the cleared rows (defuse them!)
         if (rowsToClear.length > 0 && this.activeBombs.length > 0) {
-            bombDefused = this.checkBombsCleared(rowsToClear);
+            defusedBombIds = this.checkBombsCleared(rowsToClear);
         }
 
         // 3. Animate Rows
@@ -569,7 +602,7 @@ export class TetrisEngine {
             else if (intensity === 3) this.spawnText("TRIPLE", cx - 80, cy, '#F538FF');
 
             // Bomb defused message
-            if (bombDefused) {
+            if (defusedBombIds.length > 0) {
                 this.spawnText("DEFUSED!", cx - 80, cy + 40, '#0DFF72');
             }
         }
@@ -590,7 +623,7 @@ export class TetrisEngine {
             this.updateBombPositions(rowsToClear);
         }
 
-        return { linesCleared, bombDefused };
+        return { linesCleared, bombDefused: defusedBombIds.length > 0, defusedBombIds };
     }
 
     // Try to fall by one row. Returns { dropped: boolean }.
@@ -636,6 +669,13 @@ export class TetrisEngine {
 
     hold() {
         if (!this.canHold) return;
+
+        // BOMB, BUSTER, and LIGHTNING_I pieces cannot be held.
+        // Bombs need time-pressure; busters need positional commitment;
+        // Lightning I-pieces were paid for with lines — holding them
+        // would let the player bank free I-pieces indefinitely.
+        if (this.currentPiece === 'BOMB' || this.currentPiece === 'BUSTER' || this.currentPiece === 'LIGHTNING_I') return;
+
         if (this.holdPiece) {
             const temp = this.currentPiece;
             this.currentPiece = this.holdPiece;
@@ -646,6 +686,13 @@ export class TetrisEngine {
             this.lastMoveWasRotation = false;
             this.groundedAtMs = null;
             this.lockResetsUsed = 0;
+
+            // Restore busterShape if swapping a BUSTER back from hold.
+            if (this.currentPiece === 'BUSTER' && !this.busterShape) {
+                this.busterShape = BUSTER_SHAPES[Math.floor(Math.random() * BUSTER_SHAPES.length)];
+            } else if (this.currentPiece !== 'BUSTER') {
+                this.busterShape = null;
+            }
         } else {
             this.holdPiece = this.currentPiece;
             this.spawnPiece();
@@ -662,6 +709,7 @@ export class TetrisEngine {
 
         this.nextPieces.forEach((type, i) => {
             // BUSTER doesn't have a fixed shape - show a T as a stand-in.
+            // LIGHTNING_I uses the I shape/color in the preview.
             const displayType = type === 'BUSTER' ? 'T' : type;
             const matrix = PIECES[displayType];
             if (!matrix) return;
@@ -675,7 +723,7 @@ export class TetrisEngine {
                         const hue = (Date.now() / 10 + x * 30 + y * 30) % 360;
                         this.drawBeveledCube(ctx, px, py, cell - 2, `hsl(${hue}, 100%, 60%)`);
                     } else {
-                        this.drawBeveledCube(ctx, px, py, cell - 2, COLORS[type]);
+                        this.drawBeveledCube(ctx, px, py, cell - 2, COLORS[type] || COLORS['I']);
                     }
                 });
             });
@@ -766,7 +814,11 @@ export class TetrisEngine {
 
         // BOMB: red-tinted cube + emoji + countdown.
         if (type === 'BOMB' || type === 'B') {
-            const timeRemaining = this.getBombTimeRemaining();
+            // Each grid cell maps to exactly one bomb in activeBombs; pass its
+            // id so the displayed countdown matches that specific bomb instead
+            // of falling back to the soonest-expiring one.
+            const owner = this.activeBombs.find(b => b.x === x && b.y === y);
+            const timeRemaining = this.getBombTimeRemaining(owner ? owner.id : undefined);
             const isUrgent = timeRemaining !== null && timeRemaining <= 2;
             const pulsing = isUrgent && Math.floor(Date.now() / 200) % 2 === 0;
             const baseColor = pulsing ? '#ff3030' : COLORS['BOMB'];

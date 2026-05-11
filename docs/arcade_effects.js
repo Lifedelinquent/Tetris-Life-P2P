@@ -465,6 +465,7 @@ export class ArcadeManager {
     // Switch to battle mode (MP3 playlist). Plays only if musicOn.
     startBattleMusic() {
         this.battleMusicActive = true;
+        this.normalPlaybackRate = 1.0; // Reset from previous match's speed curve
         this._stopSynth();
         this._playCurrent();
     }
@@ -483,12 +484,20 @@ export class ArcadeManager {
 
         if (!this.gameOverAudio) {
             this.gameOverAudio = new Audio('music/46. Game Over BGM [Tetris Gameboy Theme].mp3');
-            this.gameOverAudio.addEventListener('ended', () => {
-                // After the sting ends, kick lobby music. _playCurrent
-                // respects musicOn so this is a no-op if the player muted.
-                this._playCurrent();
-            });
         }
+
+        // Use a named handler so we can remove it in stopGameOverMusic.
+        // This prevents stale callbacks from firing after a new match starts.
+        if (this._gameOverEndedHandler) {
+            this.gameOverAudio.removeEventListener('ended', this._gameOverEndedHandler);
+        }
+        this._gameOverEndedHandler = () => {
+            // After the sting ends, kick lobby music. _playCurrent
+            // respects musicOn so this is a no-op if the player muted.
+            this._playCurrent();
+        };
+        this.gameOverAudio.addEventListener('ended', this._gameOverEndedHandler);
+
         this.gameOverAudio.volume = this.musicVolume || 0.2;
         this.gameOverAudio.currentTime = 0;
 
@@ -503,6 +512,12 @@ export class ArcadeManager {
         if (this.gameOverAudio) {
             this.gameOverAudio.pause();
             this.gameOverAudio.currentTime = 0;
+            // Remove the ended handler so it can't fire after we've moved on
+            // to a new match (prevents stale lobby-music starts).
+            if (this._gameOverEndedHandler) {
+                this.gameOverAudio.removeEventListener('ended', this._gameOverEndedHandler);
+                this._gameOverEndedHandler = null;
+            }
         }
     }
 

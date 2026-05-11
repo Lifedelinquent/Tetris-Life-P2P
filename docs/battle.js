@@ -115,7 +115,8 @@ export class BattleManager {
         } else if (type === 'rush') { // Lightning -> 3 I pieces
             if (this.totalLinesCleared >= this.LIGHTNING_COST) {
                 this.totalLinesCleared -= this.LIGHTNING_COST; // Spend lines
-                this.engine.nextPieces.unshift('I', 'I', 'I');
+                // Tag as LIGHTNING_I so hold() blocks them (lines already spent).
+                this.engine.nextPieces.unshift('LIGHTNING_I', 'LIGHTNING_I', 'LIGHTNING_I');
                 this.engine.renderNext();
                 return true;
             }
@@ -170,6 +171,21 @@ export class BattleManager {
 
     // Timer Mine Bomb: Receive a bomb piece into our queue
     receiveBomb() {
+        // Shield blocks bomb insertion — the shield is meant to block
+        // "the next incoming attack" and a bomb is the most dangerous one.
+        if (this.shieldActive) {
+            this.shieldActive = false;
+            this.updateShieldVisuals();
+            if (this.onShieldUsed) this.onShieldUsed();
+
+            if (window.arcade) {
+                const x = this.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+                window.arcade.createFloatingText("BOMB BLOCKED!", x, window.innerHeight * 0.4, '#0DFF72');
+            }
+            if (window.playShieldBlockedFX) window.playShieldBlockedFX(this.isPlayer1 ? 'p1' : 'p2');
+            return; // BLOCKED
+        }
+
         // Insert BOMB at the front of the next pieces queue
         this.engine.nextPieces.unshift('BOMB');
         this.engine.renderNext();
@@ -180,40 +196,53 @@ export class BattleManager {
         }
     }
 
-    // Setup bomb detonation callback - stores expiry time for game loop checking
+    // Setup bomb detonation callback - per-bomb pausable timers.
+    // Each placed bomb gets its own independent countdown so multiple
+    // bombs tick and detonate independently.
     setupBombDetonation() {
-        this.bombRemainingMs = null;       // Active bomb time left, in ms (null = no bomb)
-        this._lastBombTickTime = 0;        // Wall clock of last decrement
+        // Array of { id, remainingMs, lastTickTime }. id links to engine.activeBombs.
+        this._bombTimers = [];
+        this._nextBombId = 0;
 
         // Engine fires this when a BOMB piece is placed.
-        this.engine.onBombPlaced = () => {
-            this.bombRemainingMs = this.engine.bombCountdown;
-            this._lastBombTickTime = Date.now();
+        this.engine.onBombPlaced = (bombId) => {
+            this._bombTimers.push({
+                id: bombId,
+                remainingMs: this.engine.bombCountdown,
+                lastTickTime: Date.now()
+            });
         };
 
-        // Let the engine's renderer read our pausable countdown.
-        this.engine.bombSecondsProvider = () => this.getBombSecondsRemaining();
+        // Let the engine's renderer read our pausable countdown per bomb.
+        this.engine.bombSecondsProvider = (bombId) => this.getBombSecondsRemaining(bombId);
     }
 
     // Called from main.js tick() - only runs when game is active (not paused),
     // so wall-clock deltas during gameplay are safe; pauses freeze the bomb.
     updateBombs() {
-        if (this.bombRemainingMs === null) return;
+        if (this._bombTimers.length === 0) return;
 
         const now = Date.now();
-        if (this._lastBombTickTime === 0) this._lastBombTickTime = now;
-        const delta = now - this._lastBombTickTime;
-        this._lastBombTickTime = now;
+        const expired = [];
 
-        // Cap delta so a long stall (sleep, alt-tab) doesn't insta-detonate
-        this.bombRemainingMs -= Math.min(delta, 1000);
+        for (const bt of this._bombTimers) {
+            if (bt.lastTickTime === 0) bt.lastTickTime = now;
+            const delta = now - bt.lastTickTime;
+            bt.lastTickTime = now;
 
-        if (this.bombRemainingMs <= 0) {
-            const bombCount = this.engine.detonateBombs();
+            // Cap delta so a long stall (sleep, alt-tab) doesn't insta-detonate
+            bt.remainingMs -= Math.min(delta, 1000);
 
-            if (bombCount > 0) {
-                // Bomb explosion garbage uses the same queued-burst path as a
-                // regular attack so the hole stays consistent across rows.
+            if (bt.remainingMs <= 0) {
+                expired.push(bt.id);
+            }
+        }
+
+        // Detonate each expired bomb individually.
+        for (const bombId of expired) {
+            const count = this.engine.detonateBombById(bombId);
+
+            if (count > 0) {
                 this._enqueueGarbage(2);
                 this.updateMeter();
                 this.startDoTTimer();
@@ -222,20 +251,29 @@ export class BattleManager {
                     const x = this.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
                     window.arcade.createFloatingText("💥 BOOM! +2 LINES!", x, window.innerHeight * 0.4, '#FF0D72');
                 }
-                // Shake the affected board + magenta flash for the explosion.
                 if (window.shakeSide) window.shakeSide(this.isPlayer1 ? 'p1' : 'p2', 'heavy');
                 if (window.flashScreen) window.flashScreen('bomb');
             }
 
-            this.bombRemainingMs = null;
-            this._lastBombTickTime = 0;
+            // Remove the timer entry.
+            this._bombTimers = this._bombTimers.filter(bt => bt.id !== bombId);
         }
     }
 
     // Used by the engine renderer to display the on-block countdown.
-    getBombSecondsRemaining() {
-        if (this.bombRemainingMs === null) return null;
-        return Math.max(0, Math.ceil(this.bombRemainingMs / 1000));
+    // If bombId is given, return that bomb's remaining time.
+    // If no bombId (legacy / fallback), return the soonest-expiring bomb.
+    getBombSecondsRemaining(bombId) {
+        if (this._bombTimers.length === 0) return null;
+        let timer;
+        if (bombId !== undefined) {
+            timer = this._bombTimers.find(bt => bt.id === bombId);
+        }
+        if (!timer) {
+            // Fallback: use soonest-expiring bomb.
+            timer = this._bombTimers.reduce((a, b) => a.remainingMs < b.remainingMs ? a : b);
+        }
+        return Math.max(0, Math.ceil(timer.remainingMs / 1000));
     }
 
     receiveGarbage(lines, effect) {

@@ -372,31 +372,16 @@ async function initGame(userId) {
         // 1. Announce I am online
         fb.setOnline();
 
-        // 2. Listen for the Start Signal (Handles BOTH players)
-        fb.listenToMatchStart((timestamp) => {
-            startCountdown(timestamp);
-        });
+        // NOTE: listenToMatchStart is registered ONLY in setupP2PReadySystem()
+        // to avoid duplicate listeners that fire startCountdown() twice on
+        // rematch (Bug #1 - caused music to start randomly/halfway/not at all).
 
         // 2b. Listen for Pause State Sync (Both players pause/unpause together)
         fb.listenToPause((pauseState) => {
             applyLocalPause(pauseState.paused, pauseState.canUnpause);
         });
 
-        // 3. Check for Opponent Presence to trigger start
-        // Host (Lifedelinquent) detects Guest.
         const opponentId = userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
-
-        // Listen continuously. The handler dedupes by timestamp.
-        fb.listenToOnline(opponentId, async (isOnline) => {
-            if (isOnline) {
-                // Host Authority: Only Lifedelinquent triggers the start
-                if (userId === "Lifedelinquent") {
-                    try {
-                        await fb.triggerMatchStart();
-                    } catch (e) { console.error("Trigger Start Failed", e); }
-                }
-            }
-        });
 
 
         fb.listenToMatch((data) => {
@@ -455,7 +440,6 @@ async function initGame(userId) {
                         // Only trigger win if explicitly game_over === true (not just truthy/undefined)
                         if (p.game_over === true) {
                             if (matchActive && !resultRecorded) {
-                                resultRecorded = true; // Prevent double recording
                                 // Record the win locally + bump session KO and reflect it in the HUD
                                 if (p1Battle) {
                                     p1Battle.koCount++;
@@ -466,8 +450,7 @@ async function initGame(userId) {
                                 if (fb && fb.recordWin) {
                                     fb.recordWin();
                                 }
-                                handleGameOver(false);
-                                showResultScreen("WIN");
+                                handleGameOver(false, "WIN");
                             }
                         } else if (p.type) {
                             p2.currentPiece = p.type;
@@ -601,6 +584,7 @@ function startCountdown(targetStartTime) {
             // Audio Switch - Start battle music (MP3 playlist at 40%)
             arcade.stopGameOverMusic(); // Stop any game over music still playing
             arcade.stopMusic(); // Stop lobby synth music
+            arcade.normalPlaybackRate = 1.0; // Reset speed from previous match (Bug #4)
             arcade.startBattleMusic(); // Start MP3 playlist
 
             // START GAME
@@ -663,10 +647,11 @@ function handleLock(result, isTSpin = false) {
             flashScreen('tspin');
         }
 
-        // If bomb was defused, clear the bomb timer
-        if (result.bombDefused && p1Battle) {
-            p1Battle.bombRemainingMs = null;
-            p1Battle._lastBombTickTime = 0;
+        // If bomb was defused, clear the matching per-bomb timer(s)
+        if (result.bombDefused && p1Battle && result.defusedBombIds) {
+            for (const id of result.defusedBombIds) {
+                p1Battle._bombTimers = p1Battle._bombTimers.filter(bt => bt.id !== id);
+            }
         }
     } else if (result.wasHardDrop) {
         // Slam SFX is louder than a gravity-driven settle.
@@ -733,7 +718,9 @@ function handleLock(result, isTSpin = false) {
         fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, buildActivePiecePayload());
     }
 
-    // Game Over Check
+    // Game Over Check - callers (tick / controls) also check p1.gameOver
+    // after handleLock returns, but catching it here ensures the state is
+    // cleaned up immediately if lockPiece triggered game over.
     if (p1.gameOver) {
         handleGameOver(true);
     }
@@ -824,22 +811,39 @@ function tick() {
     }, 50); // High polling rate for precision in foreground, auto-throttles in background
 }
 
-function handleGameOver(toppedOut) {
+function handleGameOver(toppedOut, overrideResult) {
+    // Guard: if the result has already been decided and shown, don't
+    // re-enter. Multiple code paths (handleLock, tick, controls) may all
+    // detect p1.gameOver and call this; only the first one should act.
+    if (!matchActive && resultRecorded) return;
+
     matchActive = false;
     clearTimeout(tickTimeout);
     controls.clearHeldKeys(); // no phantom auto-repeat into the next match
     arcade.stopBattleMusic();
 
-    let result = "DRAW";
+    // An explicit result (e.g. "WIN" from opponent's game_over signal)
+    // takes priority over the topped-out inference.
+    if (overrideResult) {
+        if (!resultRecorded) resultRecorded = true;
+        showResultScreen(overrideResult);
+        return;
+    }
+
     if (toppedOut && !resultRecorded) {
         resultRecorded = true;
-        result = "LOSE";
         if (fb && fb.recordLoss) fb.recordLoss();
         // Notify opponent so they record a WIN.
         fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, { game_over: true });
+        showResultScreen("LOSE");
+        return;
     }
 
-    showResultScreen(result);
+    // Fallback: shouldn't normally reach here, but show DRAW as safety net.
+    if (!resultRecorded) {
+        resultRecorded = true;
+        showResultScreen("DRAW");
+    }
 }
 
 // Time expired with neither player topped out. Compare attack-sent (linesSent)
@@ -1056,6 +1060,15 @@ function setupPowerUpButton(prefix) {
             if (!p1Battle) return;
             const result = p1Battle.usePowerUp('twin');
             if (result === 'sendBomb') {
+                if (fb.userId === "Solo") {
+                    // Solo mode: no opponent to bomb — refund the cost and
+                    // let the player know.
+                    p1Battle.totalLinesCleared += p1Battle.BOMB_COST;
+                    updatePowerUpUI();
+                    const x = p1Battle.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+                    arcade.createFloatingText("NO OPPONENT!", x, window.innerHeight * 0.4, '#FFD700');
+                    return;
+                }
                 // Send timer mine bomb to opponent's queue via multiplayer
                 const opponentId = fb.userId === "Lifedelinquent" ? "ChronoKoala" : "Lifedelinquent";
                 fb.sendBomb(opponentId);
