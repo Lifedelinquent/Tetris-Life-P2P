@@ -62,7 +62,15 @@ export class P2PHandler {
         const peerId = `tetris-life-${this.roomCode}`;
 
         this.peer = new Peer(peerId, {
-            debug: 1 // Minimal logging
+            debug: 1, // Minimal logging
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun.peerjs.com:3478' }
+                ]
+            }
         });
 
         this.peer.on('open', () => {
@@ -103,7 +111,15 @@ export class P2PHandler {
         const hostId = `tetris-life-${this.roomCode}`;
 
         this.peer = new Peer(peerId, {
-            debug: 1
+            debug: 1,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun.peerjs.com:3478' }
+                ]
+            }
         });
 
         this.peer.on('open', () => {
@@ -219,12 +235,14 @@ export class P2PHandler {
         this.saveStats();
     }
 
-    async sendGameState(grid, koCount, garbageQueue, activePiece) {
+    async sendGameState(grid, koCount, garbageQueue, activePiece, nextPieces = null, holdPiece = null) {
         this.send('gameState', {
-            grid: JSON.stringify(grid),
+            grid: grid ? JSON.stringify(grid) : null,
             ko: koCount,
             garbage: garbageQueue,
             activePiece: activePiece,
+            nextPieces: nextPieces,
+            holdPiece: holdPiece,
             timestamp: Date.now()
         });
     }
@@ -430,7 +448,7 @@ export class P2PHandler {
 
         // Also start the host's own game
         if (this.callbacks.onMatchStart) {
-            this.callbacks.onMatchStart(startData.startTime);
+            this.callbacks.onMatchStart(startData.startTime, startData.seed);
         }
 
         return startData.startTime;
@@ -445,7 +463,7 @@ export class P2PHandler {
         if (Date.now() - payload.timestamp < 10000) {
             if (this.lastStartTime !== payload.timestamp) {
                 this.lastStartTime = payload.timestamp;
-                if (this.callbacks.onMatchStart) this.callbacks.onMatchStart(payload.startTime);
+                if (this.callbacks.onMatchStart) this.callbacks.onMatchStart(payload.startTime, payload.seed);
             }
         }
     }

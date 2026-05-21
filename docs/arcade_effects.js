@@ -407,6 +407,26 @@ export class ArcadeManager {
         this.gameMusicBuffer = null;
         this.gameMusicSource = null;
 
+        // BGM media elements routing through Web Audio BGM Gain
+        this.audioElement = new Audio();
+        this.audioElement.crossOrigin = "anonymous";
+        this.audioElement.addEventListener('ended', () => this.fadeToNextTrack());
+        try {
+            this.audioSource = this.audioCtx.createMediaElementSource(this.audioElement);
+            this.audioSource.connect(this.bgmGain);
+        } catch (e) {
+            console.warn("Failed to create BGM source node in initAudio:", e);
+        }
+
+        this.gameOverAudio = new Audio('music/46. Game Over BGM [Tetris Gameboy Theme].mp3');
+        this.gameOverAudio.crossOrigin = "anonymous";
+        try {
+            this.gameOverSource = this.audioCtx.createMediaElementSource(this.gameOverAudio);
+            this.gameOverSource.connect(this.bgmGain);
+        } catch (e) {
+            console.warn("Failed to create GameOver BGM source node in initAudio:", e);
+        }
+
         // Drums
         this.drumsEnabled = false;
         this.nextDrumTime = 0;
@@ -445,12 +465,6 @@ export class ArcadeManager {
 
         if (this.bgmGain) {
             this.bgmGain.gain.setValueAtTime(vol, this.audioCtx.currentTime);
-        }
-        if (this.audioElement) {
-            this.audioElement.volume = vol;
-        }
-        if (this.gameOverAudio) {
-            this.gameOverAudio.volume = vol;
         }
     }
 
@@ -622,6 +636,13 @@ export class ArcadeManager {
 
         if (!this.gameOverAudio) {
             this.gameOverAudio = new Audio('music/46. Game Over BGM [Tetris Gameboy Theme].mp3');
+            this.gameOverAudio.crossOrigin = "anonymous";
+            try {
+                this.gameOverSource = this.audioCtx.createMediaElementSource(this.gameOverAudio);
+                this.gameOverSource.connect(this.bgmGain);
+            } catch (e) {
+                console.warn(e);
+            }
         }
 
         // Use a named handler so we can remove it in stopGameOverMusic.
@@ -636,14 +657,14 @@ export class ArcadeManager {
         };
         this.gameOverAudio.addEventListener('ended', this._gameOverEndedHandler);
 
-        this.gameOverAudio.volume = this.musicVolume || 0.2;
+        this.gameOverAudio.volume = 1.0;
         this.gameOverAudio.currentTime = 0;
 
         if (this.musicOn) {
             this.gameOverAudio.play().catch(() => this._playCurrent());
         }
         // If music is off, the lobby will already be silent and the next
-        // toggle from the user will start the lobby synth.
+        // toggle from the user will start the lobby sting.
     }
 
     stopGameOverMusic() {
@@ -676,7 +697,14 @@ export class ArcadeManager {
         // Create or reuse audio element
         if (!this.audioElement) {
             this.audioElement = new Audio();
+            this.audioElement.crossOrigin = "anonymous";
             this.audioElement.addEventListener('ended', () => this.fadeToNextTrack());
+            try {
+                this.audioSource = this.audioCtx.createMediaElementSource(this.audioElement);
+                this.audioSource.connect(this.bgmGain);
+            } catch (e) {
+                console.warn(e);
+            }
         }
 
         this.audioElement.src = trackPath;
@@ -685,9 +713,7 @@ export class ArcadeManager {
 
         // Play and fade in
         this.audioElement.play().then(() => {
-            // Use current volume setting or default to 0.2 (20%)
-            const targetVol = (typeof this.musicVolume !== 'undefined') ? this.musicVolume : 0.2;
-            this.fadeIn(targetVol);
+            this.fadeIn(1.0);
         }).catch(err => {
             console.warn('Music playback failed:', err);
         });

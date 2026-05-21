@@ -52,7 +52,7 @@ const WALL_KICKS = {
 };
 
 export class TetrisEngine {
-    constructor(canvas, nextCanvas, holdCanvas) {
+    constructor(canvas, nextCanvas, holdCanvas, seed = null) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.nextCanvas = nextCanvas;
@@ -80,8 +80,24 @@ export class TetrisEngine {
         // Visual toggles - main.js sets these from the settings module.
         this.showGhost = true;
 
+        // Seeded randomizer system
+        this.seed = seed;
+        this.rng = this.createRNG(seed);
+        this.gridChanged = false;
+
         this.initBag();
         this.spawnPiece();
+    }
+
+    createRNG(seed) {
+        // Mulberry32 seeded generator (returns 0..1 values)
+        let h = seed === null ? Math.floor(Math.random() * 0xFFFFFFFF) : seed;
+        return function() {
+            let t = h += 0x6D2B79F5;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        }
     }
 
     createEmptyGrid() {
@@ -93,7 +109,7 @@ export class TetrisEngine {
             const types = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
             // Fisher-Yates: uniform shuffle (`.sort(() => Math.random()-0.5)` is biased)
             for (let i = types.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
+                const j = Math.floor(this.rng() * (i + 1));
                 [types[i], types[j]] = [types[j], types[i]];
             }
             this.bag = types;
@@ -108,7 +124,18 @@ export class TetrisEngine {
     spawnPiece() {
         const type = this.nextPieces.shift();
         this.initBag();
-        this.currentPiece = type;
+
+        if (type && type.startsWith('BUSTER_')) {
+            this.busterShape = type.substring(7);
+            this.currentPiece = 'BUSTER';
+        } else if (type === 'BUSTER') {
+            this.busterShape = BUSTER_SHAPES[Math.floor(this.rng() * BUSTER_SHAPES.length)];
+            this.currentPiece = 'BUSTER';
+        } else {
+            this.currentPiece = type;
+            this.busterShape = null;
+        }
+
         // Spawn one row above the visible grid so pieces "rise into view"
         // and (more importantly) we only top-out when the piece's filled
         // cells actually overlap the stack, not when it merely touches the
@@ -122,13 +149,6 @@ export class TetrisEngine {
         // the timer and decides when to actually lock.
         this.groundedAtMs = null;
         this.lockResetsUsed = 0;
-
-        // If this is a Color Buster, assign a random normal tetris shape
-        if (type === 'BUSTER') {
-            this.busterShape = BUSTER_SHAPES[Math.floor(Math.random() * BUSTER_SHAPES.length)];
-        } else {
-            this.busterShape = null;
-        }
 
         // Check Danger Mode (if highest block is above row 5)
         let highestY = ROWS;
@@ -338,6 +358,8 @@ export class TetrisEngine {
         this.lastBusterResult = isBuster
             ? this.executeColorBuster(busterPositions)
             : null;
+
+        this.gridChanged = true;
     }
 
     // Color Buster: find most-touched color, remove all of it, apply gravity.
@@ -378,7 +400,7 @@ export class TetrisEngine {
             return { busted: false, removed: 0, color: null };
         }
 
-        const targetHexColor = targetColors[Math.floor(Math.random() * targetColors.length)];
+        const targetHexColor = targetColors[Math.floor(this.rng() * targetColors.length)];
 
         let removedCount = 0;
         let particlesSpawned = 0;
@@ -473,6 +495,8 @@ export class TetrisEngine {
             }
         }
 
+        this.gridChanged = true;
+
         // Remove only the defused bombs from tracking.
         this.activeBombs = this.activeBombs.filter(b => !defusedIds.has(b.id));
         return Array.from(defusedIds); // Return defused bomb IDs
@@ -512,6 +536,9 @@ export class TetrisEngine {
                 this.spawnBlockEffect(b.x * BLOCK_SIZE, b.y * BLOCK_SIZE, '#ff00ff', 4);
                 detonatedCount++;
             }
+        }
+        if (detonatedCount > 0) {
+            this.gridChanged = true;
         }
         this.activeBombs = this.activeBombs.filter(b => b.id !== bombId);
         return detonatedCount;
@@ -635,8 +662,10 @@ export class TetrisEngine {
             this.pos.y--;
             return { dropped: false };
         }
-        // Falling counts as a non-rotation move for T-spin tracking.
+        // Falling counts as a non-rotation move for T-spin tracking,
+        // and resets the lock-delay reset counter because the piece has descended.
         this.lastMoveWasRotation = false;
+        this.lockResetsUsed = 0;
         return { dropped: true };
     }
 
@@ -689,7 +718,7 @@ export class TetrisEngine {
 
             // Restore busterShape if swapping a BUSTER back from hold.
             if (this.currentPiece === 'BUSTER' && !this.busterShape) {
-                this.busterShape = BUSTER_SHAPES[Math.floor(Math.random() * BUSTER_SHAPES.length)];
+                this.busterShape = BUSTER_SHAPES[Math.floor(this.rng() * BUSTER_SHAPES.length)];
             } else if (this.currentPiece !== 'BUSTER') {
                 this.busterShape = null;
             }
@@ -708,9 +737,9 @@ export class TetrisEngine {
         const cell = 20;
 
         this.nextPieces.forEach((type, i) => {
-            // BUSTER doesn't have a fixed shape - show a T as a stand-in.
-            // LIGHTNING_I uses the I shape/color in the preview.
-            const displayType = type === 'BUSTER' ? 'T' : type;
+            // BUSTER shape can be pre-assigned in type string as 'BUSTER_X'
+            const isBuster = type && type.startsWith('BUSTER_');
+            const displayType = isBuster ? type.substring(7) : (type === 'BUSTER' ? 'T' : type);
             const matrix = PIECES[displayType];
             if (!matrix) return;
 
@@ -719,7 +748,7 @@ export class TetrisEngine {
                     if (value === 0) return;
                     const px = x * cell + 10;
                     const py = y * cell + i * 80 + 20;
-                    if (type === 'BUSTER') {
+                    if (isBuster || type === 'BUSTER') {
                         const hue = (Date.now() / 10 + x * 30 + y * 30) % 360;
                         this.drawBeveledCube(ctx, px, py, cell - 2, `hsl(${hue}, 100%, 60%)`);
                     } else {
@@ -731,9 +760,10 @@ export class TetrisEngine {
     }
 
     renderHold() {
-        if (!this.holdCanvas || !this.holdPiece) return;
+        if (!this.holdCanvas) return;
         const ctx = this.holdCanvas.getContext('2d');
         ctx.clearRect(0, 0, this.holdCanvas.width, this.holdCanvas.height);
+        if (!this.holdPiece) return;
         const matrix = PIECES[this.holdPiece];
         if (!matrix) return;
         const cell = 20;

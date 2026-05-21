@@ -6,6 +6,7 @@ import {
     BOMB_COST,
     COLOR_BUSTER_COST,
 } from './config.js';
+import { BUSTER_SHAPES } from './tetris.js';
 
 export class BattleManager {
     constructor(engine, isPlayer1) {
@@ -138,8 +139,10 @@ export class BattleManager {
 
     // Color Buster: Insert a glowing BUSTER piece into the next queue
     activateColorBuster() {
-        // Insert BUSTER at the front of the next pieces queue
-        this.engine.nextPieces.unshift('BUSTER');
+        // Pre-assign the shape using the engine's RNG to keep it deterministic!
+        const shape = BUSTER_SHAPES[Math.floor(this.engine.rng() * BUSTER_SHAPES.length)];
+        // Insert BUSTER at the front of the next pieces queue with its pre-assigned shape
+        this.engine.nextPieces.unshift(`BUSTER_${shape}`);
         this.engine.renderNext();
 
         if (window.arcade) {
@@ -460,6 +463,7 @@ export class BattleManager {
             toApply -= take;
             if (front.lines === 0) this.pendingGarbageQueue.shift();
         }
+        this.engine.gridChanged = true;
     }
 
     updateMeter() {
@@ -476,6 +480,7 @@ export class BattleManager {
         this.pendingGarbage = 0;
         this.pendingGarbageQueue = [];
         this.engine.grid = this.engine.createEmptyGrid();
+        this.engine.gridChanged = true;
         this.updateMeter();
         this.engine.spawnPiece();
     }

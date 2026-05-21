@@ -1172,13 +1172,13 @@ body.no-crt #crt-overlay { display: none; }
     color: #FFD700;
     text-shadow: 0 0 8px #FFD700, 0 0 16px #FFA500;
     line-height: 28px;
-    animation: marquee-scroll 28s linear infinite;
+    animation: marquee-scroll 14s linear infinite;
     will-change: transform;
 }
 @keyframes marquee-scroll {
     0%   { transform: translateX(0); }
-    /* The duplicated text in the HTML means -50% returns to a seamless start */
-    100% { transform: translateX(-50%); }
+    /* With 4 identical segments, translating by -25% (1 segment length) starts the loop perfectly */
+    100% { transform: translateX(-25%); }
 }
 @media (prefers-reduced-motion: reduce) {
     .lobby-marquee-track { animation: none; }

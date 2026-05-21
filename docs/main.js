@@ -202,6 +202,7 @@ window.addEventListener('load', () => {
 let p1, p2, p1Battle;
 let matchActive = false;
 let startTime;
+let currentMatchSeed = null;
 
 // Game State Globals
 let score = 0;
@@ -267,9 +268,10 @@ function createSoloMock() {
     };
 }
 
-async function initGame(userId) {
+async function initGame(userId, seed = null) {
     if (gameInitialized) return;
     gameInitialized = true;
+    currentMatchSeed = seed;
 
     // For solo mode, create a mock handler if one wasn't already attached.
     if (userId === "Solo" && !fb) {
@@ -320,6 +322,7 @@ async function initGame(userId) {
             localNext = document.getElementById('p1-next');
             localHold = document.getElementById('p1-hold');
             remoteNext = document.getElementById('p2-next');
+            remoteHold = document.getElementById('p2-hold');
 
             // UI Labels & Stats
             document.querySelector('.p1-split .player-name').innerText = "LIFEDELINQUENT (YOU)";
@@ -339,6 +342,7 @@ async function initGame(userId) {
             localNext = document.getElementById('p2-next');
             localHold = document.getElementById('p2-hold');
             remoteNext = document.getElementById('p1-next');
+            remoteHold = document.getElementById('p1-hold');
 
             // UI Labels & Stats
             document.querySelector('.p2-split .player-name').innerText = "CHRONOKOALA (YOU)";
@@ -354,7 +358,7 @@ async function initGame(userId) {
         }
 
         // p1 variable acts as the LOCAL ENGINE (Your Inputs)
-        p1 = new TetrisEngine(localCanvas, localNext, localHold);
+        p1 = new TetrisEngine(localCanvas, localNext, localHold, seed);
         p1.showGhost = settings.ghostPiece;
         p1Battle = new BattleManager(p1, userId === 'Lifedelinquent' || userId === 'Solo');
         p1Battle.onShieldUsed = () => updatePowerUpUI(); // Update UI when shield is consumed
@@ -365,7 +369,7 @@ async function initGame(userId) {
         // p2 variable acts as the REMOTE ENGINE (Network Updates).
         // Hide ghost on opponent regardless of setting - their ghost is
         // not actually meaningful since we only render their broadcast grid.
-        p2 = new TetrisEngine(remoteCanvas, remoteNext);
+        p2 = new TetrisEngine(remoteCanvas, remoteNext, remoteHold);
         p2.showGhost = false;
 
         // --- Presence & Match Start Logic ---
@@ -438,6 +442,18 @@ async function initGame(userId) {
 
                             p2.grid = parsedGrid;
                         }
+                    }
+
+                    // Opponent next pieces preview
+                    if (oppState.nextPieces && p2) {
+                        p2.nextPieces = oppState.nextPieces;
+                        p2.renderNext();
+                    }
+
+                    // Opponent hold piece preview
+                    if (oppState.holdPiece !== undefined && p2) {
+                        p2.holdPiece = oppState.holdPiece;
+                        p2.renderHold();
                     }
 
                     // Active Piece
@@ -516,22 +532,30 @@ async function initGame(userId) {
     }
 }
 
-function startCountdown(targetStartTime) {
+function startCountdown(targetStartTime, seed = null) {
     // Force Interrupt: Stop any running game loop logic
     matchActive = false;
     startTime = null;
     resultRecorded = false; // Reset for new match
 
+    if (seed !== null) {
+        currentMatchSeed = seed;
+    }
+
     // Reset Game State - only if p1 already exists (rematch scenario)
     // For first game start, initGame already set up p1
     if (p1 && p1.canvas) {
         const carriedKoCount = p1Battle ? p1Battle.koCount : 0;
-        p1 = new TetrisEngine(p1.canvas, p1.nextCanvas, p1.holdCanvas);
+        p1 = new TetrisEngine(p1.canvas, p1.nextCanvas, p1.holdCanvas, currentMatchSeed);
         p1.showGhost = settings.ghostPiece;
         p1Battle = new BattleManager(p1, myButtonPrefix === 'p1');
         p1Battle.koCount = carriedKoCount; // Persist session KOs across rematches
         p1Battle.onShieldUsed = () => updatePowerUpUI(); // Update UI when shield is consumed
         p1Battle.setupBombDetonation(); // Re-register bomb detonation callback
+    }
+    if (p2 && p2.canvas) {
+        p2 = new TetrisEngine(p2.canvas, p2.nextCanvas, p2.holdCanvas);
+        p2.showGhost = false;
     }
 
     score = 0; // RESET SCORE!
@@ -737,9 +761,7 @@ function handleLock(result, isTSpin = false) {
     // DoT system handles garbage application automatically via timer
 
     // Update State (New Piece)
-    if (fb.userId !== "Solo") {
-        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, buildActivePiecePayload());
-    }
+    broadcastIfNetworked(true);
 
     // Game Over Check - callers (tick / controls) also check p1.gameOver
     // after handleLock returns, but catching it here ensures the state is
@@ -804,9 +826,7 @@ function tick() {
         if (dropResult.dropped) {
             // Still falling: broadcast and clear any stale grounded state.
             p1.groundedAtMs = null;
-            if (fb.userId !== "Solo") {
-                fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, buildActivePiecePayload());
-            }
+            broadcastIfNetworked(false);
         } else {
             // Touching the floor - start the lock-delay timer if it isn't already.
             if (p1.groundedAtMs === null) p1.groundedAtMs = performance.now();
@@ -825,6 +845,12 @@ function tick() {
             handleGameOver(true);
             return;
         }
+    }
+
+    // Check if grid changed during tick (e.g. from bombs, DoT, etc.)
+    if (p1 && p1.gridChanged) {
+        broadcastIfNetworked(true);
+        p1.gridChanged = false;
     }
 
     // Schedule next check
@@ -1001,9 +1027,16 @@ function updatePowerUpUI() {
 
 // Used by both the input layer and the gravity tick to push state to the
 // opponent. Lives in main.js because it touches several gameplay globals.
-function broadcastIfNetworked() {
+function broadcastIfNetworked(gridChanged = false) {
     if (fb && fb.userId !== "Solo") {
-        fb.sendGameState(p1.grid, p1Battle.koCount, p1Battle.pendingGarbage, buildActivePiecePayload());
+        fb.sendGameState(
+            gridChanged ? p1.grid : null,
+            p1Battle.koCount,
+            p1Battle.pendingGarbage,
+            buildActivePiecePayload(),
+            p1.nextPieces,
+            p1.holdPiece
+        );
     }
 }
 
@@ -1329,12 +1362,12 @@ function setupP2PReadySystem() {
     });
 
     // Listen for match start
-    fb.listenToMatchStart(async (timestamp) => {
+    fb.listenToMatchStart(async (timestamp, seed) => {
         // Hide P2P screen, show game
         document.getElementById('p2p-screen').classList.add('hidden');
         document.getElementById('game-container').classList.remove('hidden');
-        await initGame(selectedUserId);
-        startCountdown(timestamp);
+        await initGame(selectedUserId, seed);
+        startCountdown(timestamp, seed);
     });
 }
 
