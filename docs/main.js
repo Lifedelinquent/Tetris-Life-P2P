@@ -134,6 +134,12 @@ window.addEventListener('load', () => {
             if (arcade.musicOn) {
                 arcade.startMusic();
             }
+            // Trigger welcome announcer!
+            setTimeout(() => {
+                if (arcade && typeof arcade.announceWelcome === 'function') {
+                    arcade.announceWelcome();
+                }
+            }, 300);
         });
 
         // Apply the persisted musicOn preference so the engine matches
@@ -1363,11 +1369,23 @@ document.getElementById('select-solo').onclick = () => {
     startCountdown(Date.now() + 3000);
 };
 
-// Arcade Button Hover Sounds
-['create-room-btn', 'join-room-btn', 'select-solo', 'ready-btn'].forEach(id => {
-    const btn = document.getElementById(id);
-    if (btn) {
-        btn.addEventListener('mouseenter', () => arcade.playHoverSound());
+// Arcade Button Hover Sounds (Delegated for modern feel and dynamically created buttons)
+document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest('button, input, #open-settings-btn');
+    if (el) {
+        const isLobby = el.closest('#p2p-screen');
+        const isSettings = el.closest('#settings-modal') || el.id === 'open-settings-btn';
+        if (isLobby || isSettings) {
+            if (!el.dataset.hovered) {
+                el.dataset.hovered = 'true';
+                if (arcade && typeof arcade.playHoverSound === 'function') {
+                    arcade.playHoverSound();
+                }
+                el.addEventListener('mouseleave', () => {
+                    delete el.dataset.hovered;
+                }, { once: true });
+            }
+        }
     }
 });
 

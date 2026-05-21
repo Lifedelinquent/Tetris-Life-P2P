@@ -1371,3 +1371,450 @@ body.no-crt #crt-overlay { display: none; }
         transform: translateY(-5px);
     }
 }
+
+/* ====================================================================
+   LOBBY CARD REDESIGN – Arcade Cabinet Glass Panel
+   ==================================================================== */
+
+.lobby-card {
+    position: relative;
+    z-index: 10;
+    width: min(92vw, 580px);
+    padding: 40px 36px 32px;
+    border-radius: 18px;
+    background: linear-gradient(
+        165deg,
+        rgba(15, 12, 30, 0.88) 0%,
+        rgba(8, 6, 18, 0.92) 100%
+    );
+    border: 2px solid rgba(13, 194, 255, 0.35);
+    box-shadow:
+        0 0 40px rgba(13, 194, 255, 0.12),
+        0 0 80px rgba(245, 56, 255, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 0 60px rgba(13, 194, 255, 0.04);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    text-align: center;
+    animation: lobby-card-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes lobby-card-enter {
+    0% {
+        opacity: 0;
+        transform: scale(0.92) translateY(30px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Scanline shimmer overlay */
+.lobby-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(13, 194, 255, 0.015) 2px,
+        rgba(13, 194, 255, 0.015) 4px
+    );
+    z-index: 1;
+}
+
+/* Animated border glow */
+.lobby-card::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 20px;
+    background: conic-gradient(
+        from 0deg,
+        #0DC2FF,
+        #F538FF,
+        #FFE138,
+        #0DFF72,
+        #0DC2FF
+    );
+    z-index: -1;
+    opacity: 0.25;
+    filter: blur(12px);
+    animation: lobby-border-rotate 8s linear infinite;
+}
+
+@keyframes lobby-border-rotate {
+    0%   { filter: blur(12px) hue-rotate(0deg); }
+    100% { filter: blur(12px) hue-rotate(360deg); }
+}
+
+/* --- Lobby subtitle --- */
+
+.lobby-subtitle {
+    color: rgba(180, 180, 200, 0.7);
+    margin-bottom: 28px;
+    font-size: 0.85rem;
+    letter-spacing: 2px;
+    font-weight: normal;
+}
+
+/* --- Arcade buttons – 3D bevel look --- */
+
+.lobby-card .arcade-btn {
+    display: block;
+    width: 100%;
+    padding: 18px 30px;
+    font-size: 0.9rem;
+    font-family: 'Press Start 2P', cursive;
+    margin: 10px 0;
+    cursor: pointer;
+    text-transform: uppercase;
+    border-radius: 14px;
+    position: relative;
+    transition: transform 0.12s, box-shadow 0.15s, background 0.2s;
+    letter-spacing: 1px;
+}
+
+/* CREATE ROOM */
+.lobby-card .create-room-btn {
+    background: linear-gradient(135deg, #0DFF72 0%, #0DC2FF 100%);
+    color: #000;
+    border: 3px solid rgba(13, 255, 114, 0.6);
+    box-shadow:
+        0 4px 0 #089945,
+        0 0 20px rgba(13, 255, 114, 0.25),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.lobby-card .create-room-btn:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 6px 0 #089945,
+        0 0 35px rgba(13, 255, 114, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.lobby-card .create-room-btn:active {
+    transform: translateY(4px);
+    box-shadow:
+        0 0 0 #089945,
+        0 0 15px rgba(13, 255, 114, 0.3);
+}
+
+/* JOIN ROOM */
+.lobby-card .join-room-btn {
+    background: linear-gradient(135deg, #F538FF 0%, #FF0D72 100%);
+    color: #000;
+    border: 3px solid rgba(245, 56, 255, 0.6);
+    box-shadow:
+        0 4px 0 #9b1a63,
+        0 0 20px rgba(245, 56, 255, 0.25),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.lobby-card .join-room-btn:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 6px 0 #9b1a63,
+        0 0 35px rgba(245, 56, 255, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.lobby-card .join-room-btn:active {
+    transform: translateY(4px);
+    box-shadow:
+        0 0 0 #9b1a63,
+        0 0 15px rgba(245, 56, 255, 0.3);
+}
+
+/* SOLO MODE */
+.lobby-card .select-solo-btn {
+    background: linear-gradient(135deg, #3877FF 0%, #0DC2FF 100%);
+    color: #000;
+    border: 3px solid rgba(56, 119, 255, 0.5);
+    box-shadow:
+        0 4px 0 #1a3d99,
+        0 0 20px rgba(56, 119, 255, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    margin-top: 18px;
+}
+.lobby-card .select-solo-btn:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 6px 0 #1a3d99,
+        0 0 35px rgba(56, 119, 255, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.lobby-card .select-solo-btn:active {
+    transform: translateY(4px);
+    box-shadow:
+        0 0 0 #1a3d99,
+        0 0 15px rgba(56, 119, 255, 0.25);
+}
+
+/* CANCEL */
+.lobby-card .cancel-btn {
+    background: transparent;
+    color: #ff4444;
+    border: 3px solid rgba(255, 68, 68, 0.5);
+    box-shadow:
+        0 4px 0 #771a1a,
+        0 0 12px rgba(255, 68, 68, 0.15);
+    margin-top: 24px;
+}
+.lobby-card .cancel-btn:hover {
+    background: rgba(255, 68, 68, 0.1);
+    transform: translateY(-2px);
+    box-shadow:
+        0 6px 0 #771a1a,
+        0 0 25px rgba(255, 68, 68, 0.3);
+}
+
+/* BACK */
+.lobby-card .back-btn {
+    background: transparent;
+    color: #aaa;
+    border: 3px solid rgba(170, 170, 170, 0.4);
+    box-shadow:
+        0 4px 0 #444,
+        0 0 8px rgba(170, 170, 170, 0.1);
+}
+.lobby-card .back-btn:hover {
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
+    box-shadow:
+        0 6px 0 #555,
+        0 0 18px rgba(255, 255, 255, 0.15);
+}
+
+/* JOIN CONFIRM */
+.lobby-card .join-confirm-btn {
+    background: linear-gradient(135deg, #F538FF 0%, #FF0D72 100%);
+    color: #000;
+    border: 3px solid rgba(245, 56, 255, 0.6);
+    box-shadow:
+        0 4px 0 #9b1a63,
+        0 0 20px rgba(245, 56, 255, 0.25),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* READY */
+.lobby-card .ready-btn {
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    color: #000;
+    border: 3px solid rgba(255, 215, 0, 0.6);
+    font-size: 1.1rem;
+    box-shadow:
+        0 4px 0 #b38600,
+        0 0 25px rgba(255, 215, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    animation: ready-pulse 1.8s ease-in-out infinite;
+}
+.lobby-card .ready-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow:
+        0 6px 0 #b38600,
+        0 0 45px rgba(255, 215, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.lobby-card .ready-btn:active {
+    transform: translateY(4px);
+    box-shadow:
+        0 0 0 #b38600,
+        0 0 20px rgba(255, 215, 0, 0.35);
+}
+
+@keyframes ready-pulse {
+    0%, 100% { box-shadow: 0 4px 0 #b38600, 0 0 25px rgba(255, 215, 0, 0.3); }
+    50%      { box-shadow: 0 4px 0 #b38600, 0 0 45px rgba(255, 215, 0, 0.55); }
+}
+
+/* RESET STATS mini button */
+.lobby-card .reset-stats-btn {
+    background: rgba(60, 60, 70, 0.6);
+    color: #999;
+    font-size: 0.65rem;
+    margin-top: 12px;
+    padding: 6px 16px;
+}
+.lobby-card .reset-stats-btn:hover {
+    color: #fff;
+    background: rgba(80, 80, 90, 0.8);
+}
+
+/* --- Panel titles & descriptions --- */
+
+.panel-title {
+    margin-bottom: 18px;
+    font-size: 1rem;
+    letter-spacing: 2px;
+}
+.panel-desc {
+    color: rgba(170, 170, 180, 0.8);
+    font-size: 0.75rem;
+    margin-bottom: 16px;
+}
+
+/* Color utility classes */
+.text-cyan    { color: #0DFF72; text-shadow: 0 0 10px rgba(13, 255, 114, 0.5); }
+.text-magenta { color: #F538FF; text-shadow: 0 0 10px rgba(245, 56, 255, 0.5); }
+
+/* --- Room code display --- */
+
+#room-code-display {
+    font-size: 3.5rem;
+    color: #fff;
+    letter-spacing: 14px;
+    text-shadow:
+        0 0 20px #0DFF72,
+        0 0 40px #0DFF72,
+        0 0 80px rgba(13, 255, 114, 0.3);
+    margin: 24px 0;
+    animation: code-flicker 3s ease-in-out infinite;
+}
+
+@keyframes code-flicker {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.85; }
+}
+
+/* --- Room code input --- */
+
+#room-code-input {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 2.2rem;
+    width: 220px;
+    text-align: center;
+    letter-spacing: 10px;
+    padding: 14px;
+    background: rgba(20, 15, 40, 0.8);
+    border: 3px solid #F538FF;
+    color: #fff;
+    text-transform: uppercase;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-shadow: 0 0 15px rgba(245, 56, 255, 0.2), inset 0 0 15px rgba(245, 56, 255, 0.05);
+}
+
+#room-code-input:focus {
+    border-color: #F538FF;
+    box-shadow:
+        0 0 25px rgba(245, 56, 255, 0.4),
+        inset 0 0 20px rgba(245, 56, 255, 0.1);
+}
+
+/* --- Join error text --- */
+
+#join-error {
+    color: #ff4444;
+    font-size: 0.75rem;
+    margin-top: 10px;
+    min-height: 20px;
+    text-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
+}
+
+/* --- Button row (flex) --- */
+
+.button-row {
+    display: flex;
+    gap: 14px;
+    margin-top: 18px;
+    justify-content: center;
+}
+.button-row .arcade-btn {
+    flex: 1;
+    min-width: 0;
+}
+
+/* --- Lobby status text --- */
+
+.lobby-status {
+    color: #FFD700;
+    font-size: 0.85rem;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+}
+
+/* --- Avatar VS container (connected panel) --- */
+
+.avatar-vs-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 28px;
+    margin: 24px 0;
+}
+
+.player-lobby-panel {
+    text-align: center;
+}
+
+.player-lobby-panel img {
+    width: 90px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 3px solid #0DFF72;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    box-shadow: 0 0 15px rgba(13, 255, 114, 0.2);
+}
+
+/* P2 avatar border */
+.player-lobby-panel:last-child img {
+    border-color: #F538FF;
+    box-shadow: 0 0 15px rgba(245, 56, 255, 0.2);
+}
+
+.lobby-username {
+    margin-top: 10px;
+    font-size: 0.7rem;
+    letter-spacing: 1px;
+}
+
+.lobby-record {
+    color: rgba(170, 170, 180, 0.7);
+    font-size: 0.65rem;
+    margin-top: 5px;
+}
+
+.lobby-card .ready-indicator {
+    font-size: 0.7rem;
+    margin-top: 6px;
+}
+
+.lobby-card .vs-text {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #fff;
+    text-shadow:
+        0 0 8px rgba(255, 255, 255, 0.5),
+        0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+.lobby-role {
+    color: rgba(170, 170, 180, 0.7);
+    font-size: 0.8rem;
+    margin-bottom: 18px;
+}
+
+.ready-hint {
+    color: rgba(100, 100, 110, 0.8);
+    font-size: 0.65rem;
+    margin-top: 14px;
+}
+
+/* --- Reduced motion --- */
+
+@media (prefers-reduced-motion: reduce) {
+    .lobby-card,
+    .lobby-card::after {
+        animation: none;
+    }
+    #room-code-display {
+        animation: none;
+    }
+    .lobby-card .ready-btn {
+        animation: none;
+    }
+}

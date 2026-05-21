@@ -1,3 +1,34 @@
+const CUBE_VERTICES = [
+    [-0.5, -0.5, -0.5],
+    [ 0.5, -0.5, -0.5],
+    [ 0.5,  0.5, -0.5],
+    [-0.5,  0.5, -0.5],
+    [-0.5, -0.5,  0.5],
+    [ 0.5, -0.5,  0.5],
+    [ 0.5,  0.5,  0.5],
+    [-0.5,  0.5,  0.5]
+];
+
+const CUBE_FACES = [
+    [0, 1, 2, 3], // Back face
+    [1, 5, 6, 2], // Right face
+    [5, 4, 7, 6], // Front face
+    [4, 0, 3, 7], // Left face
+    [4, 5, 1, 0], // Bottom face
+    [3, 2, 6, 7]  // Top face
+];
+
+const FACE_NORMALS = [
+    [0, 0, -1],
+    [1, 0, 0],
+    [0, 0, 1],
+    [-1, 0, 0],
+    [0, -1, 0],
+    [0, 1, 0]
+];
+
+const LIGHT_DIR = [0.577, -0.577, -0.577];
+
 export class ArcadeManager {
     constructor() {
         this.ctx = null;
@@ -18,6 +49,23 @@ export class ArcadeManager {
             [[0, 1, 1], [1, 1, 0]], // S
             [[0, 1, 0], [1, 1, 1]], // T
             [[1, 1, 0], [0, 1, 1]]  // Z
+        ];
+
+        this.shapes3D = [
+            // I shape
+            [[-1.5, 0, 0], [-0.5, 0, 0], [0.5, 0, 0], [1.5, 0, 0]],
+            // J shape
+            [[-0.75, -0.75, 0], [-0.75, 0.25, 0], [0.25, 0.25, 0], [1.25, 0.25, 0]],
+            // L shape
+            [[0.75, -0.75, 0], [-1.25, 0.25, 0], [-0.25, 0.25, 0], [0.75, 0.25, 0]],
+            // O shape
+            [[-0.5, -0.5, 0], [0.5, -0.5, 0], [-0.5, 0.5, 0], [0.5, 0.5, 0]],
+            // S shape
+            [[0, -0.5, 0], [1, -0.5, 0], [-1, 0.5, 0], [0, 0.5, 0]],
+            // T shape
+            [[0, -0.75, 0], [-1, 0.25, 0], [0, 0.25, 0], [1, 0.25, 0]],
+            // Z shape
+            [[-1, -0.5, 0], [0, -0.5, 0], [0, 0.5, 0], [1, 0.5, 0]]
         ];
 
         // Audio
@@ -84,20 +132,133 @@ export class ArcadeManager {
     }
 
     createTetromino(randomY = false) {
-        const shapeIdx = Math.floor(Math.random() * this.shapes.length);
+        const shapeIdx = Math.floor(Math.random() * this.shapes3D.length);
         const color = this.colors[shapeIdx];
-        const shape = this.shapes[shapeIdx];
+        const cubes = this.shapes3D[shapeIdx];
 
         return {
             x: Math.random() * this.canvas.width,
-            y: randomY ? Math.random() * this.canvas.height : -100,
-            rotation: 0,
-            speed: 1 + Math.random() * 2,
-            rotSpeed: (Math.random() - 0.5) * 0.05,
-            shape: shape,
+            y: randomY ? Math.random() * this.canvas.height : -150,
+            z: Math.random() * 300, // Depth from 0 to 300
+            rx: Math.random() * Math.PI * 2,
+            ry: Math.random() * Math.PI * 2,
+            rz: Math.random() * Math.PI * 2,
+            speed: 0.8 + Math.random() * 1.5,
+            rotSpeedX: (Math.random() - 0.5) * 0.03,
+            rotSpeedY: (Math.random() - 0.5) * 0.03,
+            rotSpeedZ: (Math.random() - 0.5) * 0.03,
+            cubes: cubes,
             color: color,
-            size: 30
+            size: 20 + Math.random() * 10
         };
+    }
+
+    rotate3D(v, rx, ry, rz) {
+        let [x, y, z] = v;
+        if (rz !== 0) {
+            const cos = Math.cos(rz), sin = Math.sin(rz);
+            const nx = x * cos - y * sin;
+            const ny = x * sin + y * cos;
+            x = nx; y = ny;
+        }
+        if (ry !== 0) {
+            const cos = Math.cos(ry), sin = Math.sin(ry);
+            const nx = x * cos + z * sin;
+            const nz = -x * sin + z * cos;
+            x = nx; z = nz;
+        }
+        if (rx !== 0) {
+            const cos = Math.cos(rx), sin = Math.sin(rx);
+            const ny = y * cos - z * sin;
+            const nz = y * sin + z * cos;
+            y = ny; z = nz;
+        }
+        return [x, y, z];
+    }
+
+    draw3DTetromino(t, ctx = this.ctx) {
+        const focalLength = 500;
+        const baseAlpha = 0.15 + 0.65 * (1.0 - t.z / 300);
+        const allFaces = [];
+
+        t.cubes.forEach((cubeLocalCenter) => {
+            const cubeVertices = [];
+            CUBE_VERTICES.forEach((uv) => {
+                const lx = (cubeLocalCenter[0] + uv[0]) * t.size;
+                const ly = (cubeLocalCenter[1] + uv[1]) * t.size;
+                const lz = (cubeLocalCenter[2] + uv[2]) * t.size;
+
+                const rotated = this.rotate3D([lx, ly, lz], t.rx, t.ry, t.rz);
+
+                const absX = t.x + rotated[0];
+                const absY = t.y + rotated[1];
+                const absZ = t.z + rotated[2];
+
+                const scale = focalLength / (focalLength + absZ);
+                const projX = t.x + rotated[0] * scale;
+                const projY = t.y + rotated[1] * scale;
+
+                cubeVertices.push({ x: projX, y: projY, z: absZ });
+            });
+
+            CUBE_FACES.forEach((faceIndices, faceIdx) => {
+                const localNormal = FACE_NORMALS[faceIdx];
+                const rotNormal = this.rotate3D(localNormal, t.rx, t.ry, t.rz);
+
+                if (rotNormal[2] < 0) {
+                    const avgZ = (cubeVertices[faceIndices[0]].z +
+                                  cubeVertices[faceIndices[1]].z +
+                                  cubeVertices[faceIndices[2]].z +
+                                  cubeVertices[faceIndices[3]].z) / 4;
+
+                    const dotProduct = rotNormal[0] * LIGHT_DIR[0] +
+                                      rotNormal[1] * LIGHT_DIR[1] +
+                                      rotNormal[2] * LIGHT_DIR[2];
+
+                    allFaces.push({
+                        vertices: faceIndices.map(idx => cubeVertices[idx]),
+                        avgZ: avgZ,
+                        dotProduct: dotProduct,
+                        color: t.color
+                    });
+                }
+            });
+        });
+
+        allFaces.sort((a, b) => b.avgZ - a.avgZ);
+
+        allFaces.forEach((face) => {
+            ctx.beginPath();
+            ctx.moveTo(face.vertices[0].x, face.vertices[0].y);
+            ctx.lineTo(face.vertices[1].x, face.vertices[1].y);
+            ctx.lineTo(face.vertices[2].x, face.vertices[2].y);
+            ctx.lineTo(face.vertices[3].x, face.vertices[3].y);
+            ctx.closePath();
+
+            ctx.fillStyle = face.color;
+            ctx.globalAlpha = 0.5 * baseAlpha;
+            ctx.fill();
+
+            if (face.dotProduct < 0) {
+                ctx.fillStyle = '#000000';
+                ctx.globalAlpha = Math.min(0.65, -face.dotProduct * 0.65) * baseAlpha;
+                ctx.fill();
+            } else {
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = Math.min(0.35, face.dotProduct * 0.35) * baseAlpha;
+                ctx.fill();
+            }
+
+            ctx.strokeStyle = face.color;
+            ctx.lineWidth = 1.8;
+            ctx.globalAlpha = 0.85 * baseAlpha;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = face.color;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        });
+
+        ctx.globalAlpha = 1.0;
     }
 
     // --- Particle System ---
@@ -148,18 +309,20 @@ export class ArcadeManager {
 
     animate() {
         if (this.ctx) {
-            this.ctx.fillStyle = 'rgba(26, 26, 26, 0.2)'; // Trails effect
+            this.ctx.fillStyle = 'rgba(15, 15, 22, 0.25)';
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
             this.tetrominos.forEach((t, i) => {
                 t.y += t.speed;
-                t.rotation += t.rotSpeed;
+                t.rx += t.rotSpeedX;
+                t.ry += t.rotSpeedY;
+                t.rz += t.rotSpeedZ;
 
-                if (t.y > this.canvas.height + 100) {
+                if (t.y > this.canvas.height + 150) {
                     this.tetrominos[i] = this.createTetromino();
                 }
 
-                this.drawTetromino(t, this.ctx);
+                this.draw3DTetromino(t, this.ctx);
             });
         }
 
@@ -190,31 +353,6 @@ export class ArcadeManager {
         }
 
         requestAnimationFrame(() => this.animate());
-    }
-
-    drawTetromino(t, ctx = this.ctx) {
-        ctx.save();
-        ctx.translate(t.x, t.y);
-        ctx.rotate(t.rotation);
-
-        ctx.fillStyle = t.color;
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = t.color;
-
-        t.shape.forEach((row, ry) => {
-            row.forEach((val, rx) => {
-                if (val) {
-                    ctx.fillRect(
-                        (rx - t.shape[0].length / 2) * t.size,
-                        (ry - t.shape.length / 2) * t.size,
-                        t.size - 2,
-                        t.size - 2
-                    );
-                }
-            });
-        });
-
-        ctx.restore();
     }
 
     // --- Audio ---
@@ -860,22 +998,102 @@ export class ArcadeManager {
     playHoverSound() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        const now = this.audioCtx.currentTime;
 
-        const osc = this.audioCtx.createOscillator();
-        const gain = this.audioCtx.createGain();
+        const osc1 = this.audioCtx.createOscillator();
+        const osc2 = this.audioCtx.createOscillator();
+        const gain1 = this.audioCtx.createGain();
+        const gain2 = this.audioCtx.createGain();
 
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(440, this.audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(880, this.audioCtx.currentTime + 0.1);
+        // Dual frequency sweep: a crisp, high electronic retro blip
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(650, now);
+        osc1.frequency.exponentialRampToValueAtTime(1300, now + 0.08);
+        gain1.gain.setValueAtTime(0.06, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
 
-        gain.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.1);
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(975, now + 0.025);
+        osc2.frequency.exponentialRampToValueAtTime(1950, now + 0.10);
+        gain2.gain.setValueAtTime(0.04, now + 0.025);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
 
-        osc.connect(gain);
-        gain.connect(this.sfxGain);
+        osc1.connect(gain1);
+        gain1.connect(this.sfxGain);
+        osc2.connect(gain2);
+        gain2.connect(this.sfxGain);
 
-        osc.start();
-        osc.stop(this.audioCtx.currentTime + 0.1);
+        osc1.start(now);
+        osc1.stop(now + 0.08);
+        osc2.start(now + 0.025);
+        osc2.stop(now + 0.10);
+    }
+
+    playAnnouncerSting() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        const now = this.audioCtx.currentTime;
+
+        // Epic cabinet synth power-up sound (rising chords)
+        const baseFreqs = [261.63, 329.63, 392.00, 523.25]; // C4, E4, G4, C5
+        baseFreqs.forEach((freq, idx) => {
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            const filter = this.audioCtx.createBiquadFilter();
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, now);
+            osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + 0.35);
+
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(freq * 3, now);
+            filter.frequency.exponentialRampToValueAtTime(freq * 1.2, now + 0.35);
+
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.sfxGain);
+
+            osc.start(now);
+            osc.stop(now + 0.45);
+        });
+    }
+
+    announceWelcome() {
+        if (!('speechSynthesis' in window)) return;
+        this.resumeAudio();
+
+        // 1. Play the announcer sting SFX
+        this.playAnnouncerSting();
+
+        // 2. Pronounce the welcome message with a short delay
+        setTimeout(() => {
+            const utterance = new SpeechSynthesisUtterance("Welcome to Tetris Life Battle");
+            const voices = window.speechSynthesis.getVoices();
+
+            // Try to find a good deep English announcer voice
+            let selectedVoice = null;
+            const keywords = ['google us english', 'microsoft david', 'male', 'english', 'en-us', 'en'];
+            for (const kw of keywords) {
+                selectedVoice = voices.find(v => v.name.toLowerCase().includes(kw) || v.lang.toLowerCase().includes(kw));
+                if (selectedVoice) break;
+            }
+
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+            }
+
+            utterance.pitch = 0.70; // Low-pitch announcer feel
+            utterance.rate = 0.85;  // Slightly slow, clear articulation
+            
+            // Sync volume with user's SFX slider
+            const sfxVol = (this.sfxGain && this.sfxGain.gain) ? this.sfxGain.gain.value : 0.5;
+            utterance.volume = sfxVol;
+
+            window.speechSynthesis.speak(utterance);
+        }, 150);
     }
 
     // --- Action SFX ---

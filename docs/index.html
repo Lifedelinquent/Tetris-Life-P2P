@@ -114,93 +114,84 @@
         <div style="position: absolute; top: 20px; right: 20px;">
             <button id="music-toggle" class="arcade-btn-small">🎵 MUSIC: OFF</button>
         </div>
-        <h1 class="neon-title lobby-title">TetrisLife Battle</h1>
-        <h2 style="color: #aaa; margin-bottom: 30px; font-size: 1rem;">P2P Edition - No Limits!</h2>
 
-        <!-- Connection Options -->
-        <div id="connection-options" class="user-selection">
-            <button id="create-room-btn" class="arcade-btn"
-                style="background: linear-gradient(135deg, #0DFF72, #0DC2FF); color: #000;">
-                🏠 CREATE ROOM
-            </button>
-            <button id="join-room-btn" class="arcade-btn"
-                style="background: linear-gradient(135deg, #F538FF, #FF0D72); color: #000;">
-                🔗 JOIN ROOM
-            </button>
-            <button id="select-solo" class="arcade-btn" style="background: #4a90e2; margin-top: 20px;">
-                Solo Mode
-            </button>
-        </div>
+        <div class="lobby-card">
+            <h1 class="neon-title lobby-title">TetrisLife Battle</h1>
+            <h2 class="lobby-subtitle">P2P Edition - No Limits!</h2>
 
-        <!-- Create Room (Hidden Initially) -->
-        <div id="create-room-panel" class="user-selection hidden">
-            <h3 style="color: #0DFF72; margin-bottom: 20px;">📡 CREATING ROOM...</h3>
-            <div id="room-code-display" style="font-size: 4rem; color: #fff; letter-spacing: 15px; 
-                text-shadow: 0 0 20px #0DFF72, 0 0 40px #0DFF72; margin: 30px 0;">
-                ----
-            </div>
-            <p style="color: #aaa; font-size: 0.8rem; margin-bottom: 20px;">Share this code with your friend!</p>
-            <div id="host-status" style="color: #FFD700; font-size: 0.9rem;">⏳ Waiting for opponent...</div>
-            <button id="cancel-create-btn" class="arcade-btn"
-                style="margin-top: 30px; border-color: #ff3333; color: #ff3333;">
-                ✖ CANCEL
-            </button>
-        </div>
-
-        <!-- Join Room (Hidden Initially) -->
-        <div id="join-room-panel" class="user-selection hidden">
-            <h3 style="color: #F538FF; margin-bottom: 20px;">🔗 JOIN ROOM</h3>
-            <p style="color: #aaa; font-size: 0.8rem; margin-bottom: 15px;">Enter the 4-character room code:</p>
-            <input type="text" id="room-code-input" maxlength="4" style="font-family: 'Press Start 2P', cursive; font-size: 2.5rem; width: 200px; 
-                text-align: center; letter-spacing: 10px; padding: 15px; background: #1a1a2e; 
-                border: 3px solid #F538FF; color: #fff; text-transform: uppercase;" placeholder="----">
-            <div id="join-error" style="color: #ff3333; font-size: 0.8rem; margin-top: 10px; min-height: 20px;"></div>
-            <div style="display: flex; gap: 15px; margin-top: 20px;">
-                <button id="confirm-join-btn" class="arcade-btn"
-                    style="background: linear-gradient(135deg, #F538FF, #FF0D72); color: #000;">
-                    ✓ JOIN
+            <!-- Connection Options -->
+            <div id="connection-options" class="user-selection">
+                <button id="create-room-btn" class="arcade-btn create-room-btn">
+                    🏠 CREATE ROOM
                 </button>
-                <button id="cancel-join-btn" class="arcade-btn" style="border-color: #aaa; color: #aaa;">
-                    ✖ BACK
+                <button id="join-room-btn" class="arcade-btn join-room-btn">
+                    🔗 JOIN ROOM
+                </button>
+                <button id="select-solo" class="arcade-btn select-solo-btn">
+                    Solo Mode
                 </button>
             </div>
-        </div>
 
-        <!-- Connected Panel (Shown after connection) -->
-        <div id="connected-panel" class="user-selection hidden">
-            <div style="display: flex; justify-content: center; align-items: center; gap: 30px; margin: 30px 0;">
-                <div style="text-align: center;">
-                    <img id="lobby-p1-avatar" src="avatars/briannormal.png" alt="Lifedelinquent"
-                        style="width: 100px; height: 100px; object-fit: cover; border-radius: 10px; border: 3px solid #0DFF72;">
-                    <div style="color: #0DFF72; margin-top: 10px;">Lifedelinquent</div>
-                    <div id="lobby-p1-record" style="color: #aaa; font-size: 0.7rem; margin-top: 5px;">0W - 0L</div>
-                    <div id="p1-ready-indicator" style="color: #FFD700; font-size: 0.8rem; margin-top: 5px;">
-                        ⏳ Not Ready
-                    </div>
+            <!-- Create Room (Hidden Initially) -->
+            <div id="create-room-panel" class="user-selection hidden">
+                <h3 class="panel-title text-cyan">📡 CREATING ROOM...</h3>
+                <div id="room-code-display">
+                    ----
                 </div>
-                <div style="font-size: 2rem; color: #fff;">VS</div>
-                <div style="text-align: center;">
-                    <img id="lobby-p2-avatar" src="avatars/fernandonormal.png" alt="ChronoKoala"
-                        style="width: 100px; height: 100px; object-fit: cover; border-radius: 10px; border: 3px solid #F538FF;">
-                    <div style="color: #F538FF; margin-top: 10px;">ChronoKoala</div>
-                    <div id="lobby-p2-record" style="color: #aaa; font-size: 0.7rem; margin-top: 5px;">0W - 0L</div>
-                    <div id="p2-ready-indicator" style="color: #FFD700; font-size: 0.8rem; margin-top: 5px;">
-                        ⏳ Not Ready
-                    </div>
+                <p class="panel-desc">Share this code with your friend!</p>
+                <div id="host-status" class="lobby-status">⏳ Waiting for opponent...</div>
+                <button id="cancel-create-btn" class="arcade-btn cancel-btn">
+                    ✖ CANCEL
+                </button>
+            </div>
+
+            <!-- Join Room (Hidden Initially) -->
+            <div id="join-room-panel" class="user-selection hidden">
+                <h3 class="panel-title text-magenta">🔗 JOIN ROOM</h3>
+                <p class="panel-desc">Enter the 4-character room code:</p>
+                <input type="text" id="room-code-input" maxlength="4" placeholder="----">
+                <div id="join-error"></div>
+                <div class="button-row">
+                    <button id="confirm-join-btn" class="arcade-btn join-confirm-btn">
+                        ✓ JOIN
+                    </button>
+                    <button id="cancel-join-btn" class="arcade-btn back-btn">
+                        ✖ BACK
+                    </button>
                 </div>
             </div>
-            <div id="your-role" style="color: #aaa; font-size: 0.9rem; margin-bottom: 20px;">You are: ---</div>
-            <button id="ready-btn" class="arcade-btn"
-                style="background: linear-gradient(135deg, #FFD700, #FFA500); color: #000; font-size: 1.2rem;">
-                ✓ READY!
-            </button>
-            <button id="reset-stats-btn" class="arcade-btn-mini"
-                style="background: #444; color: #aaa; font-size: 0.7rem; margin-top: 10px; padding: 5px 15px;">
-                🔄 Reset My Record
-            </button>
-            <p style="color: #666; font-size: 0.7rem; margin-top: 15px;">Game starts when both players are ready</p>
-        </div>
 
+            <!-- Connected Panel (Shown after connection) -->
+            <div id="connected-panel" class="user-selection hidden">
+                <div class="avatar-vs-container">
+                    <div class="player-lobby-panel">
+                        <img id="lobby-p1-avatar" src="avatars/briannormal.png" alt="Lifedelinquent">
+                        <div class="lobby-username text-cyan">Lifedelinquent</div>
+                        <div id="lobby-p1-record" class="lobby-record">0W - 0L</div>
+                        <div id="p1-ready-indicator" class="ready-indicator">
+                            ⏳ Not Ready
+                        </div>
+                    </div>
+                    <div class="vs-text">VS</div>
+                    <div class="player-lobby-panel">
+                        <img id="lobby-p2-avatar" src="avatars/fernandonormal.png" alt="ChronoKoala">
+                        <div class="lobby-username text-magenta">ChronoKoala</div>
+                        <div id="lobby-p2-record" class="lobby-record">0W - 0L</div>
+                        <div id="p2-ready-indicator" class="ready-indicator">
+                            ⏳ Not Ready
+                        </div>
+                    </div>
+                </div>
+                <div id="your-role" class="lobby-role">You are: ---</div>
+                <button id="ready-btn" class="arcade-btn ready-btn">
+                    ✓ READY!
+                </button>
+                <button id="reset-stats-btn" class="arcade-btn-mini reset-stats-btn">
+                    🔄 Reset My Record
+                </button>
+                <p class="ready-hint">Game starts when both players are ready</p>
+            </div>
+        </div>
         <!-- Bottom marquee - lobby only -->
         <div class="lobby-marquee">
             <div class="lobby-marquee-track">
