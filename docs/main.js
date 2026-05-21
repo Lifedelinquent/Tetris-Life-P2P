@@ -25,7 +25,15 @@ import {
 
 // Which settings sync from host to guest. These are the ones that materially
 // affect gameplay state (timing). Per-player feel/audio settings stay local.
-const HOST_SYNCED_SETTINGS = ['matchDurationMs', 'speedCurvePct', 'lockDelayMs'];
+const HOST_SYNCED_SETTINGS = [
+    'matchDurationMs', 
+    'speedCurvePct', 
+    'lockDelayMs',
+    'shieldCost',
+    'lightningCost',
+    'bombCost',
+    'colorBusterCost'
+];
 
 function _snapshotHostSyncedSettings() {
     const out = {};
@@ -365,6 +373,8 @@ async function initGame(userId, seed = null) {
 
         // Wire power-up button click handlers for the local side only.
         setupPowerUpButton(myButtonPrefix);
+        updatePowerUpCostsUI();
+        updatePowerUpUI();
 
         // p2 variable acts as the REMOTE ENGINE (Network Updates).
         // Hide ghost on opponent regardless of setting - their ghost is
@@ -492,6 +502,12 @@ async function initGame(userId, seed = null) {
                                 const el = document.getElementById(targetId);
                                 if (el) el.innerText = p.linesSent;
                             }
+                            // Opponent lines bank update
+                            if (p.linesBank !== undefined) {
+                                const targetId = userId === "Lifedelinquent" ? 'p2-lines-bank' : 'p1-lines-bank';
+                                const el = document.getElementById(targetId);
+                                if (el) el.innerText = p.linesBank;
+                            }
                             // Mirror opponent's combo + B2B onto their side of the HUD.
                             if (p.combo !== undefined || p.backToBack !== undefined) {
                                 const opponentPrefix = userId === "Lifedelinquent" ? 'p2' : 'p1';
@@ -570,6 +586,7 @@ function startCountdown(targetStartTime, seed = null) {
     });
 
     // Reset power-up UI (removes old highlights)
+    updatePowerUpCostsUI();
     updatePowerUpUI();
 
     // Reset lines-sent display + state for both players (used by time tie-break)
@@ -578,6 +595,12 @@ function startCountdown(targetStartTime, seed = null) {
     if (p1SentEl) p1SentEl.innerText = '0';
     if (p2SentEl) p2SentEl.innerText = '0';
     if (p2) p2.linesSent = 0;
+
+    // Reset lines-bank display for both players
+    const p1BankEl = document.getElementById('p1-lines-bank');
+    const p2BankEl = document.getElementById('p2-lines-bank');
+    if (p1BankEl) p1BankEl.innerText = '0';
+    if (p2BankEl) p2BankEl.innerText = '0';
 
     // Hide combo + B2B UI for both sides so leftover state from the
     // previous match doesn't linger into the new one.
@@ -792,7 +815,8 @@ function buildActivePiecePayload() {
         score: score,
         linesSent: p1Battle ? p1Battle.linesSent : 0,
         combo: p1Battle ? p1Battle.combo : 0,
-        backToBack: p1Battle ? p1Battle.backToBack : false
+        backToBack: p1Battle ? p1Battle.backToBack : false,
+        linesBank: p1Battle ? p1Battle.totalLinesCleared : 0
     };
 }
 
@@ -1021,8 +1045,31 @@ function populateStatsCard() {
     hud.populateStatsCard({ battle: p1Battle, startTime, score });
 }
 
+function updatePowerUpCostsUI() {
+    const shieldVal = settings.shieldCost;
+    const lightningVal = settings.lightningCost;
+    const bombVal = settings.bombCost;
+    const busterVal = settings.colorBusterCost;
+
+    ['p1', 'p2'].forEach(prefix => {
+        const shieldEl = document.getElementById(`${prefix}-shield-cost`);
+        const lightningEl = document.getElementById(`${prefix}-lightning-cost`);
+        const bombEl = document.getElementById(`${prefix}-bomb-cost`);
+        const busterEl = document.getElementById(`${prefix}-buster-cost`);
+
+        if (shieldEl) shieldEl.textContent = shieldVal;
+        if (lightningEl) lightningEl.textContent = lightningVal;
+        if (bombEl) bombEl.textContent = bombVal;
+        if (busterEl) busterEl.textContent = busterVal;
+    });
+}
+
 function updatePowerUpUI() {
     hud.updatePowerUpUI(p1Battle, myButtonPrefix);
+    const bankEl = document.getElementById(`${myButtonPrefix}-lines-bank`);
+    if (bankEl && p1Battle) {
+        bankEl.textContent = p1Battle.totalLinesCleared;
+    }
 }
 
 // Used by both the input layer and the gravity tick to push state to the
@@ -1563,11 +1610,20 @@ function _refreshSettingsUI() {
     set('set-soft', settings.softDropMs); setNum('set-soft-out', settings.softDropMs + 'ms');
     set('set-lock', settings.lockDelayMs); setNum('set-lock-out', settings.lockDelayMs + 'ms');
 
-    // Match-shape sliders. Duration slider is in seconds; settings stores ms.
     set('set-duration', Math.round(settings.matchDurationMs / 1000));
     setNum('set-duration-out', _fmtDuration(settings.matchDurationMs));
     set('set-speed', settings.speedCurvePct);
     setNum('set-speed-out', settings.speedCurvePct + '%');
+
+    // Power-up cost sliders
+    set('set-shield-cost', settings.shieldCost);
+    setNum('set-shield-cost-out', settings.shieldCost);
+    set('set-lightning-cost', settings.lightningCost);
+    setNum('set-lightning-cost-out', settings.lightningCost);
+    set('set-bomb-cost', settings.bombCost);
+    setNum('set-bomb-cost-out', settings.bombCost);
+    set('set-buster-cost', settings.colorBusterCost);
+    setNum('set-buster-cost-out', settings.colorBusterCost);
 
     setChk('set-ghost', settings.ghostPiece);
     setChk('set-scanlines', settings.scanlines);
@@ -1575,11 +1631,15 @@ function _refreshSettingsUI() {
     // In multiplayer, host controls match settings - disable the inputs
     // on the guest side and surface a one-line note.
     const isGuest = fb && fb.connected && !fb.isHost;
-    ['set-duration', 'set-speed', 'set-lock'].forEach(id => {
+    [
+        'set-duration', 'set-speed', 'set-lock',
+        'set-shield-cost', 'set-lightning-cost', 'set-bomb-cost', 'set-buster-cost'
+    ].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = isGuest;
     });
     document.getElementById('match-host-note')?.classList.toggle('hidden', !isGuest);
+    document.getElementById('match-host-note-powerups')?.classList.toggle('hidden', !isGuest);
 }
 
 // Wire every input in the panel to a setSetting() call. Each binding also
@@ -1608,6 +1668,10 @@ function _wireSettingsPanelInputs() {
     bindRange('set-soft',      'softDropMs',   v => v + 'ms');
     bindRange('set-lock',      'lockDelayMs',  v => v + 'ms');
     bindRange('set-speed',     'speedCurvePct', v => v + '%');
+    bindRange('set-shield-cost', 'shieldCost', v => v);
+    bindRange('set-lightning-cost', 'lightningCost', v => v);
+    bindRange('set-bomb-cost', 'bombCost', v => v);
+    bindRange('set-buster-cost', 'colorBusterCost', v => v);
 
     // Match duration slider is in seconds for usability; we store ms.
     const durInp = document.getElementById('set-duration');
@@ -1652,6 +1716,15 @@ onSettingChange((key, value) => {
     } else if (key === 'ghostPiece') {
         if (p1) p1.showGhost = value;
         if (p2) p2.showGhost = value;
+    } else if (['shieldCost', 'lightningCost', 'bombCost', 'colorBusterCost'].includes(key)) {
+        if (p1Battle) {
+            if (key === 'shieldCost') p1Battle.SHIELD_COST = value;
+            else if (key === 'lightningCost') p1Battle.LIGHTNING_COST = value;
+            else if (key === 'bombCost') p1Battle.BOMB_COST = value;
+            else if (key === 'colorBusterCost') p1Battle.COLOR_BUSTER_COST = value;
+        }
+        updatePowerUpCostsUI();
+        updatePowerUpUI();
     }
 
     // Host: broadcast match-affecting settings so the guest mirrors them.

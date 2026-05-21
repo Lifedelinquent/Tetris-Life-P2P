@@ -86,6 +86,33 @@
             </div>
 
             <div class="settings-section">
+                <h3>POWER-UPS COST (LINES)</h3>
+                <div id="match-host-note-powerups" class="settings-host-note hidden">
+                    🔒 Host controls match settings in multiplayer
+                </div>
+                <label class="settings-row">
+                    <span>Shield Cost</span>
+                    <input type="range" id="set-shield-cost" min="1" max="20" step="1">
+                    <span class="settings-num" id="set-shield-cost-out">3</span>
+                </label>
+                <label class="settings-row">
+                    <span>Lightning Cost</span>
+                    <input type="range" id="set-lightning-cost" min="1" max="25" step="1">
+                    <span class="settings-num" id="set-lightning-cost-out">6</span>
+                </label>
+                <label class="settings-row">
+                    <span>Bomb Cost</span>
+                    <input type="range" id="set-bomb-cost" min="1" max="30" step="1">
+                    <span class="settings-num" id="set-bomb-cost-out">9</span>
+                </label>
+                <label class="settings-row">
+                    <span>Color Buster Cost</span>
+                    <input type="range" id="set-buster-cost" min="1" max="40" step="1">
+                    <span class="settings-num" id="set-buster-cost-out">17</span>
+                </label>
+            </div>
+
+            <div class="settings-section">
                 <h3>VISUAL</h3>
                 <label class="settings-row settings-row-toggle">
                     <span>Ghost Piece</span>
@@ -255,35 +282,41 @@
                             <canvas id="p1-hold" width="100" height="100"></canvas>
                         </div>
 
-                        <!-- Powerups (Icon Based) - Disabled until earned -->
-                        <div class="power-ups" id="p1-powerups"
-                            style="display: flex; flex-direction: column; gap: 10px;">
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <button class="power-icon" id="p1-shield-btn" disabled
-                                    title="Shield - Block next attack">
-                                    <img src="images/icon_shield.png" alt="Shield" class="power-img">
-                                </button>
-                                <span style="font-size: 0.7rem; color: #aaa;">[S]</span>
+                        <!-- Lines Bank & Powerups (Icon Based) - Disabled until earned -->
+                        <div class="power-ups-container" style="display: flex; flex-direction: column; gap: 10px; align-items: center;">
+                            <div class="lines-bank-box" id="p1-lines-bank-box">
+                                <span class="lines-bank-title">BANK</span>
+                                <span class="lines-bank-value" id="p1-lines-bank">0</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <button class="power-icon" id="p1-rush-btn" disabled title="Lightning - Get 3 I-pieces">
-                                    <img src="images/icon_lightning.png" alt="Rush" class="power-img">
-                                </button>
-                                <span style="font-size: 0.7rem; color: #aaa;">[R]</span>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <button class="power-icon" id="p1-twin-btn" disabled
-                                    title="Bomb - Mess up opponent's top">
-                                    <img src="images/icon_bomb.png" alt="Bomb" class="power-img">
-                                </button>
-                                <span style="font-size: 0.7rem; color: #aaa;">[E]</span>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <button class="power-icon" id="p1-buster-btn" disabled
-                                    title="Color Buster - Remove all blocks of one color">
-                                    <img src="images/icon_buster.png" alt="Color Buster" class="power-img">
-                                </button>
-                                <span style="font-size: 0.7rem; color: #aaa;">[Q]</span>
+                            <div class="power-ups" id="p1-powerups"
+                                style="display: flex; flex-direction: column; gap: 10px;">
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <button class="power-icon" id="p1-shield-btn" disabled
+                                        title="Shield - Block next attack">
+                                        <img src="images/icon_shield.png" alt="Shield" class="power-img">
+                                    </button>
+                                    <span style="font-size: 0.7rem; color: #aaa;">[S] <span id="p1-shield-cost" class="power-cost p1-shield-cost">3</span></span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <button class="power-icon" id="p1-rush-btn" disabled title="Lightning - Get 3 I-pieces">
+                                        <img src="images/icon_lightning.png" alt="Rush" class="power-img">
+                                    </button>
+                                    <span style="font-size: 0.7rem; color: #aaa;">[R] <span id="p1-lightning-cost" class="power-cost p1-lightning-cost">6</span></span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <button class="power-icon" id="p1-twin-btn" disabled
+                                        title="Bomb - Mess up opponent's top">
+                                        <img src="images/icon_bomb.png" alt="Bomb" class="power-img">
+                                    </button>
+                                    <span style="font-size: 0.7rem; color: #aaa;">[E] <span id="p1-bomb-cost" class="power-cost p1-bomb-cost">9</span></span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <button class="power-icon" id="p1-buster-btn" disabled
+                                        title="Color Buster - Remove all blocks of one color">
+                                        <img src="images/icon_buster.png" alt="Color Buster" class="power-img">
+                                    </button>
+                                    <span style="font-size: 0.7rem; color: #aaa;">[Q] <span id="p1-buster-cost" class="power-cost p1-buster-cost">17</span></span>
+                                </div>
                             </div>
                         </div>
                         <!-- P1 Avatar (Brian/Lifedelinquent) - Left side for symmetry with Fernando -->
@@ -348,35 +381,41 @@
                             <canvas id="p2-hold" width="100" height="100"></canvas>
                         </div>
 
-                        <!-- Powerups (Mirrored for P2) - Same layout as P1 -->
-                        <div class="power-ups" id="p2-powerups"
-                            style="display: flex; flex-direction: column; gap: 10px;">
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <button class="power-icon" id="p2-shield-btn" disabled
-                                    title="Shield - Block next attack">
-                                    <img src="images/icon_shield.png" alt="Shield" class="power-img">
-                                </button>
-                                <span style="font-size: 0.7rem; color: #aaa;">[S]</span>
+                        <!-- Lines Bank & Powerups (Mirrored for P2) - Same layout as P1 -->
+                        <div class="power-ups-container" style="display: flex; flex-direction: column; gap: 10px; align-items: center;">
+                            <div class="lines-bank-box" id="p2-lines-bank-box">
+                                <span class="lines-bank-title">BANK</span>
+                                <span class="lines-bank-value" id="p2-lines-bank">0</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <button class="power-icon" id="p2-rush-btn" disabled title="Lightning - Get 3 I-pieces">
-                                    <img src="images/icon_lightning.png" alt="Rush" class="power-img">
-                                </button>
-                                <span style="font-size: 0.7rem; color: #aaa;">[R]</span>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <button class="power-icon" id="p2-twin-btn" disabled
-                                    title="Bomb - Mess up opponent's top">
-                                    <img src="images/icon_bomb.png" alt="Bomb" class="power-img">
-                                </button>
-                                <span style="font-size: 0.7rem; color: #aaa;">[E]</span>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <button class="power-icon" id="p2-buster-btn" disabled
-                                    title="Color Buster - Remove all blocks of one color">
-                                    <img src="images/icon_buster.png" alt="Color Buster" class="power-img">
-                                </button>
-                                <span style="font-size: 0.7rem; color: #aaa;">[Q]</span>
+                            <div class="power-ups" id="p2-powerups"
+                                style="display: flex; flex-direction: column; gap: 10px;">
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <button class="power-icon" id="p2-shield-btn" disabled
+                                        title="Shield - Block next attack">
+                                        <img src="images/icon_shield.png" alt="Shield" class="power-img">
+                                    </button>
+                                    <span style="font-size: 0.7rem; color: #aaa;">[S] <span id="p2-shield-cost" class="power-cost p2-shield-cost">3</span></span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <button class="power-icon" id="p2-rush-btn" disabled title="Lightning - Get 3 I-pieces">
+                                        <img src="images/icon_lightning.png" alt="Rush" class="power-img">
+                                    </button>
+                                    <span style="font-size: 0.7rem; color: #aaa;">[R] <span id="p2-lightning-cost" class="power-cost p2-lightning-cost">6</span></span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <button class="power-icon" id="p2-twin-btn" disabled
+                                        title="Bomb - Mess up opponent's top">
+                                        <img src="images/icon_bomb.png" alt="Bomb" class="power-img">
+                                    </button>
+                                    <span style="font-size: 0.7rem; color: #aaa;">[E] <span id="p2-bomb-cost" class="power-cost p2-bomb-cost">9</span></span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 5px;">
+                                    <button class="power-icon" id="p2-buster-btn" disabled
+                                        title="Color Buster - Remove all blocks of one color">
+                                        <img src="images/icon_buster.png" alt="Color Buster" class="power-img">
+                                    </button>
+                                    <span style="font-size: 0.7rem; color: #aaa;">[Q] <span id="p2-buster-cost" class="power-cost p2-buster-cost">17</span></span>
+                                </div>
                             </div>
                         </div>
                         <!-- P2 Avatar (Fernando/ChronoKoala) - Left side to match P1 -->

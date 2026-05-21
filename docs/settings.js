@@ -30,6 +30,12 @@ const DEFAULTS = {
     // Visual toggles.
     ghostPiece: true,
     scanlines:  true,
+
+    // Power-ups cost (lines).
+    shieldCost:      cfg.SHIELD_COST,
+    lightningCost:   cfg.LIGHTNING_COST,
+    bombCost:        cfg.BOMB_COST,
+    colorBusterCost: cfg.COLOR_BUSTER_COST,
 };
 
 function _loadSaved() {

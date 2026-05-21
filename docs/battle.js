@@ -1,12 +1,9 @@
 import {
     DOT_RATE_LINES,
     DOT_INTERVAL_MS,
-    SHIELD_COST,
-    LIGHTNING_COST,
-    BOMB_COST,
-    COLOR_BUSTER_COST,
 } from './config.js';
 import { BUSTER_SHAPES } from './tetris.js';
+import { settings } from './settings.js';
 
 export class BattleManager {
     constructor(engine, isPlayer1) {
@@ -35,10 +32,10 @@ export class BattleManager {
 
         // Power-up Currency System (lines = currency)
         this.totalLinesCleared = 0;
-        this.SHIELD_COST       = SHIELD_COST;
-        this.LIGHTNING_COST    = LIGHTNING_COST;
-        this.BOMB_COST         = BOMB_COST;
-        this.COLOR_BUSTER_COST = COLOR_BUSTER_COST;
+        this.SHIELD_COST       = settings.shieldCost;
+        this.LIGHTNING_COST    = settings.lightningCost;
+        this.BOMB_COST         = settings.bombCost;
+        this.COLOR_BUSTER_COST = settings.colorBusterCost;
 
         this.shieldActive = false;
         this.onShieldUsed = null; // Set by main.js to refresh the shield button.

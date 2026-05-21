@@ -500,6 +500,64 @@ canvas {
     background: rgba(0, 0, 0, 0.5);
 }
 
+/* Lines Bank Box */
+.lines-bank-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border: 2px dashed #444;
+    border-radius: 8px;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.7);
+    min-width: 80px;
+    margin-bottom: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    transition: all 0.3s ease;
+}
+
+.lines-bank-title {
+    font-size: 0.5rem;
+    color: #888;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    font-family: 'Press Start 2P', cursive;
+}
+
+.lines-bank-value {
+    font-size: 1.1rem;
+    color: #FFE138;
+    font-family: 'Press Start 2P', cursive;
+    text-shadow: 0 0 8px rgba(255, 225, 56, 0.6);
+}
+
+.power-cost {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 0.65rem;
+    margin-left: 2px;
+}
+
+/* Color coding for specific costs to match powerup glows */
+.p1-shield-cost, .p2-shield-cost {
+    color: #0DFF72 !important;
+    text-shadow: 0 0 5px #0DFF72;
+}
+
+.p1-lightning-cost, .p2-lightning-cost {
+    color: #FFFF00 !important;
+    text-shadow: 0 0 5px #FFFF00;
+}
+
+.p1-bomb-cost, .p2-bomb-cost {
+    color: #FF00FF !important;
+    text-shadow: 0 0 5px #FF00FF;
+}
+
+.p1-buster-cost, .p2-buster-cost {
+    color: #00FFFF !important;
+    text-shadow: 0 0 5px #00FFFF;
+}
+
 /* Powerups - Icon Style */
 .power-ups {
     display: flex;
