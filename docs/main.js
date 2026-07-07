@@ -531,6 +531,7 @@ async function initGame(userId, seed = null) {
         // fb.listenToMatch((data) => { ... }); // REMOVED
 
         fb.listenToAttacks((lines, effect) => {
+            arcade.playGarbageWarning();
             p1Battle.receiveGarbage(lines, effect);
         });
 
@@ -641,7 +642,7 @@ function startCountdown(targetStartTime, seed = null) {
         } else {
             clearInterval(interval);
             text.innerText = "GO!";
-            arcade.playClickSound(); // Go sound
+            arcade.playGo(); // Go sound
             setTimeout(() => overlay.classList.add('hidden'), 500);
 
             // Audio Switch - Start battle music (MP3 playlist at 40%)
@@ -752,6 +753,7 @@ function handleLock(result, isTSpin = false) {
         const x = p1Battle.isPlayer1 ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
         const color = p1Battle.combo > 6 ? '#FF0D72' : '#FFE138';
         arcade.createFloatingText(`COMBO ×${p1Battle.combo}`, x, window.innerHeight * 0.48, color);
+        arcade.playCombo(p1Battle.combo);
     }
 
     // All-Clear (Perfect Clear): if the clear emptied the board entirely,

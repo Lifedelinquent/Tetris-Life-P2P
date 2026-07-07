@@ -19,3 +19,5 @@ Thumbs.db
 !public/music/*.mp3
 !public/loop.mp3
 !public/classic.mp3
+# Sound effects served by GitHub Pages
+!docs/sfx/*.mp3

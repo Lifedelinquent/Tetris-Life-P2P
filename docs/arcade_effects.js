@@ -440,6 +440,53 @@ export class ArcadeManager {
             data[i] = Math.random() * 2 - 1;
         }
         this.noiseBuffer = buffer;
+
+        this._loadSfxSamples();
+    }
+
+    // --- Premium SFX samples (AI-generated, docs/sfx/*.mp3) ---
+    //
+    // Each play* method tries its sample first and falls back to the old
+    // oscillator synth if the file hasn't loaded (or failed to fetch), so
+    // audio keeps working offline or mid-load.
+
+    _loadSfxSamples() {
+        this.sfxBuffers = {};
+        const names = [
+            'move', 'rotate', 'land', 'snap', 'harddrop', 'hold',
+            'clear1', 'clear2', 'clear3', 'tetris', 'tspin', 'allclear', 'combo',
+            'shield', 'lightning', 'bomb', 'buster', 'garbage',
+            'click', 'hover', 'countdown', 'go', 'sting'
+        ];
+        // Bump the version when regenerating samples so cached copies refresh.
+        const SFX_VERSION = 2;
+        names.forEach(name => {
+            fetch(`sfx/${name}.mp3?v=${SFX_VERSION}`)
+                .then(res => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return res.arrayBuffer();
+                })
+                .then(data => this.audioCtx.decodeAudioData(data))
+                .then(buf => { this.sfxBuffers[name] = buf; })
+                .catch(e => console.warn(`SFX sample "${name}" unavailable, using synth fallback:`, e.message));
+        });
+    }
+
+    // Plays a loaded sample through the SFX gain. Returns false when the
+    // buffer isn't ready so callers can fall back to their synth version.
+    _playSample(name, { volume = 1, rate = 1 } = {}) {
+        const buf = this.sfxBuffers && this.sfxBuffers[name];
+        if (!buf || !this.audioCtx) return false;
+        this.resumeAudio();
+        const src = this.audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.playbackRate.value = rate;
+        const gain = this.audioCtx.createGain();
+        gain.gain.value = volume;
+        src.connect(gain);
+        gain.connect(this.sfxGain);
+        src.start();
+        return true;
     }
 
     setMusicSpeed(rate) {
@@ -559,6 +606,7 @@ export class ArcadeManager {
     playSoftBeep() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('countdown', { volume: 0.6 })) return;
 
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
@@ -580,6 +628,7 @@ export class ArcadeManager {
     playClickSound() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('click', { volume: 0.65 })) return;
 
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
@@ -928,6 +977,8 @@ export class ArcadeManager {
     playRotate() {
         if (!this.audioCtx) return;
         this.resumeAudio(); // Ensure context is running
+        // Slight pitch variance keeps rapid rotations from sounding robotic.
+        if (this._playSample('rotate', { volume: 0.55, rate: 0.96 + Math.random() * 0.08 })) return;
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
         osc.type = 'triangle';
@@ -946,6 +997,8 @@ export class ArcadeManager {
     playLand() {
         if (!this.audioCtx) return;
         this.resumeAudio();
+        // TETR.IO-style soft lock click - clean pop, no bass.
+        if (this._playSample('land', { volume: 0.5, rate: 0.97 + Math.random() * 0.06 })) return;
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
         osc.type = 'square';
@@ -970,6 +1023,9 @@ export class ArcadeManager {
     playLineClear(lines) {
         if (!this.audioCtx) return;
         this.resumeAudio();
+        const sampleName = lines >= 4 ? 'tetris' : `clear${lines}`;
+        const sampleVol = lines >= 4 ? 1.0 : 0.75 + lines * 0.05;
+        if (this._playSample(sampleName, { volume: sampleVol })) return;
         const now = this.audioCtx.currentTime;
 
         const createBeep = (freq, startTime, dur, type = 'sine') => {
@@ -1024,6 +1080,7 @@ export class ArcadeManager {
     playHoverSound() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('hover', { volume: 0.35 })) return;
         const now = this.audioCtx.currentTime;
 
         const osc1 = this.audioCtx.createOscillator();
@@ -1058,6 +1115,7 @@ export class ArcadeManager {
     playAnnouncerSting() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('sting', { volume: 0.9 })) return;
         const now = this.audioCtx.currentTime;
 
         // Epic cabinet synth power-up sound (rising chords)
@@ -1128,6 +1186,8 @@ export class ArcadeManager {
     playMove() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        // Quiet + pitch-jittered so DAS auto-repeat stays a texture, not a buzz.
+        if (this._playSample('move', { volume: 0.3, rate: 0.95 + Math.random() * 0.1 })) return;
         const t = this.audioCtx.currentTime;
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
@@ -1145,6 +1205,13 @@ export class ArcadeManager {
     playHardDrop() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        // TETR.IO-style: the lock click pitched down for body, a crisp snap
+        // transient on top, and only a whisper of the old thud for weight.
+        if (this._playSample('land', { volume: 0.85, rate: 0.8 })) {
+            this._playSample('snap', { volume: 0.5, rate: 0.95 + Math.random() * 0.1 });
+            this._playSample('harddrop', { volume: 0.15 });
+            return;
+        }
         const t = this.audioCtx.currentTime;
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
@@ -1165,6 +1232,7 @@ export class ArcadeManager {
     playHold() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('hold', { volume: 0.6 })) return;
         const t = this.audioCtx.currentTime;
         const beep = (freq, start, dur) => {
             const o = this.audioCtx.createOscillator();
@@ -1184,6 +1252,7 @@ export class ArcadeManager {
     playShieldUp() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('shield', { volume: 0.85 })) return;
         const t = this.audioCtx.currentTime;
         const beep = (freq, start, dur) => {
             const o = this.audioCtx.createOscillator();
@@ -1204,6 +1273,7 @@ export class ArcadeManager {
     playLightning() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('lightning', { volume: 0.85 })) return;
         const t = this.audioCtx.currentTime;
         for (let i = 0; i < 3; i++) {
             const start = t + i * 0.07;
@@ -1223,6 +1293,7 @@ export class ArcadeManager {
     playBombSent() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('bomb', { volume: 0.85 })) return;
         const t = this.audioCtx.currentTime;
         for (let i = 0; i < 4; i++) {
             const start = t + i * 0.05;
@@ -1241,6 +1312,7 @@ export class ArcadeManager {
     playBuster() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('buster', { volume: 0.85 })) return;
         const t = this.audioCtx.currentTime;
         const notes = [523, 659, 784, 988, 1175]; // C E G B D6
         notes.forEach((freq, i) => {
@@ -1260,6 +1332,7 @@ export class ArcadeManager {
     playTSpin() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('tspin', { volume: 0.85 })) return;
         const t = this.audioCtx.currentTime;
         const o = this.audioCtx.createOscillator();
         const g = this.audioCtx.createGain();
@@ -1276,6 +1349,7 @@ export class ArcadeManager {
     playAllClear() {
         if (!this.audioCtx || this.isMuted) return;
         this.resumeAudio();
+        if (this._playSample('allclear', { volume: 1.0 })) return;
         const t = this.audioCtx.currentTime;
         const notes = [659, 784, 988, 1319]; // E G B E6 - bright major
         notes.forEach((freq, i) => {
@@ -1289,5 +1363,52 @@ export class ArcadeManager {
             o.connect(g); g.connect(this.sfxGain);
             o.start(start); o.stop(start + 0.5);
         });
+    }
+
+    // TETR.IO-style combo tone: same chime pitched up a semitone per combo
+    // step, capped an octave above base so long combos don't turn into a
+    // dog whistle. Layers on top of the line-clear sound.
+    playCombo(combo) {
+        if (!this.audioCtx || this.isMuted || combo < 2) return;
+        this.resumeAudio();
+        const semitones = Math.min(combo - 2, 12);
+        const rate = Math.pow(2, semitones / 12);
+        if (this._playSample('combo', { volume: 0.7, rate })) return;
+        // Synth fallback: rising sine pluck at the same pitch curve.
+        const t = this.audioCtx.currentTime;
+        const o = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(660 * rate, t);
+        g.gain.setValueAtTime(0.15, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        o.connect(g); g.connect(this.sfxGain);
+        o.start(t); o.stop(t + 0.16);
+    }
+
+    // Punchy start signal at the end of the match countdown.
+    playGo() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        if (this._playSample('go', { volume: 0.9 })) return;
+        this.playClickSound();
+    }
+
+    // Ominous rumble when opponent garbage is queued against you.
+    playGarbageWarning() {
+        if (!this.audioCtx || this.isMuted) return;
+        this.resumeAudio();
+        if (this._playSample('garbage', { volume: 0.8 })) return;
+        // Synth fallback: short low rumble.
+        const t = this.audioCtx.currentTime;
+        const o = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(90, t);
+        o.frequency.exponentialRampToValueAtTime(45, t + 0.25);
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        o.connect(g); g.connect(this.sfxGain);
+        o.start(t); o.stop(t + 0.32);
     }
 }
